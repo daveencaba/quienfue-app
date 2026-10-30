@@ -92,7 +92,11 @@ textarea{width:100%;background:var(--card);color:var(--tx);border:1px solid var(
       <div id="fwinfo" class="mut" style="margin-bottom:6px"></div>
       <div class="row"><input type="search" id="fwq" placeholder="Título del artículo (o dejá vacío para buscar por el nombre)" autocomplete="off"><button id="fwbus">Buscar</button></div>
       <div class="chips" id="fwcand"></div>
-      <button id="fwdesc" style="margin-top:8px;width:100%">⬇ Descargar artículo completo</button>
+      <button id="fwdesc" style="margin-top:8px;width:100%">📋 Copiar texto completo</button>
+      <details id="fwdet" style="margin-top:8px"><summary>📄 Ver texto completo del artículo</summary>
+        <textarea id="fwtexto" rows="12" readonly placeholder="Todavía no hay artículo descargado."></textarea>
+        <div class="mut" style="margin-top:4px">Resumilo con tu IA y pegá el resultado en «Resumen» antes de Guardar.</div>
+      </details>
       <label for="fresu">📝 Resumen (editable)</label>
       <button id="fauto" style="width:100%;margin-bottom:6px">✨ Resumen automático</button>
       <textarea id="fresu" rows="7" placeholder="Frases de origen del nombre, quién fue y fechas clave"></textarea>
@@ -493,18 +497,35 @@ function chips(){
   const b=S.libros.map((e,i)=>`<button class="chip${S.libro===e&&S.modo!=='wiki'?' on':''}" data-b="${i}">📖 ${esc(e[0])} (${esc(e[1])})</button>`);
   const x=S.libros.length?MODOS.map(([m,t])=>`<button class="chip${S.modo===m?' on':''}" data-modo="${m}">${t}</button>`):[];
   const w=S.wikis.map(c=>`<button class="chip${S.wiki===c.t&&S.modo!=='libro'?' on':''}" data-t="${esc(c.t)}">${c.et?'📍 ':''}${esc(c.label)}</button>`);
+  if(S.libros.length)b.push(`<button class="chip${!S.libro?' on':''}" data-nin="1">🚫 Ninguna de estas</button>`);
+  if(S.libro)b.push(`<button class="chip" data-desv="1">🔗 Desvincular este resultado del libro</button>`);
+  if(ACT.q&&(rechazosDe(ACT.q).length||elecciones()[norm(ACT.q)]))b.push(`<button class="chip" data-rest="1">↺ Restaurar libro</button>`);
   $('#cand').innerHTML=[...x,...b,...w].join('');
   pintarFav();
 }
 // Entrada del libro elegida por el usuario para cada calle (se recuerda para la próxima vez)
 const llaveLibro=e=>e[0]+'|'+e[1]+'|'+String(e[2]).slice(0,40);
 function elecciones(){try{return JSON.parse(localStorage.getItem('qf-eleg')||'{}');}catch(e){return {};}}
-function guardarEleccion(q,e){const m=elecciones();m[norm(q)]=llaveLibro(e);try{localStorage.setItem('qf-eleg',JSON.stringify(m));}catch(_){}}
+function guardarEleccion(q,e){const m=elecciones();m[norm(q)]=e?llaveLibro(e):'ninguna';try{localStorage.setItem('qf-eleg',JSON.stringify(m));}catch(_){}}
+// Entradas del libro desvinculadas (rechazadas) para cada calle: no vuelven a aparecer
+function rechazos(){try{return JSON.parse(localStorage.getItem('qf-rech')||'{}');}catch(e){return {};}}
+const rechazosDe=q=>rechazos()[norm(q)]||[];
+function guardarRechazo(q,e){const m=rechazos(),k=norm(q),a=m[k]||[],ll=llaveLibro(e);if(!a.includes(ll))a.push(ll);m[k]=a;try{localStorage.setItem('qf-rech',JSON.stringify(m));}catch(_){}}
+function restaurarLibro(q){
+  const m=rechazos();delete m[norm(q)];const el=elecciones();delete el[norm(q)];
+  try{localStorage.setItem('qf-rech',JSON.stringify(m));localStorage.setItem('qf-eleg',JSON.stringify(el));}catch(_){}
+}
+function desvincular(q,e){
+  guardarRechazo(q,e);
+  const el=elecciones();if(el[norm(q)]===llaveLibro(e)){delete el[norm(q)];try{localStorage.setItem('qf-eleg',JSON.stringify(el));}catch(_){}}
+}
 function aplicarEleccion(q){
   const ll=elecciones()[norm(q)];if(!ll)return false;
+  if(ll==='ninguna'){S.libro=null;return true;}      // el usuario dijo que ninguna entrada del libro es la correcta
+  if(rechazosDe(q).includes(ll))return false;
   const e=S.libros.find(x=>llaveLibro(x)===ll)||LIBRO.find(x=>llaveLibro(x)===ll);
   if(!e)return false;
-  S.libros=[e,...S.libros.filter(x=>x!==e)];S.libro=e;return true;
+  S.libros=[e];S.libro=e;return true;               // elegida la correcta: solo se ofrece esa
 }
 let busq=0;
 // Internet en segundo plano: origen del nombre (OpenStreetMap/Wikidata) y candidatos de Wikipedia
@@ -528,7 +549,8 @@ async function buscarYLeer(){
   unlock();   // "desbloquea" el audio en el celular mientras todavía estamos dentro del toque del usuario
   const my=++busq;
   $('#msg').textContent='';$('#cand').innerHTML='';
-  S.libros=buscarLibro(q);S.libro=S.libros[0]||null;S.wikis=[];S.wiki=null;
+  const rech=rechazosDe(q);
+  S.libros=buscarLibro(q).filter(e=>!rech.includes(llaveLibro(e)));S.libro=S.libros[0]||null;S.wikis=[];S.wiki=null;
   const recordada=aplicarEleccion(q);
   ACT.q=q;
   chips();   // las entradas del libro se ofrecen ya, sin esperar a internet
@@ -559,8 +581,9 @@ async function buscarYLeer(){
     const e1=cands.find(c=>c.et);
     let o='';
     if(propio)o+='✍️ Hay un texto propio para esta calle: se lee primero.<br>';
-    if(S.libro)o+='📖 En el libro de Piñeiro: <b>'+esc(S.libro[0])+'</b> ('+esc(S.libro[1])+')'+(recordada?' (la que elegiste antes)':'')+(S.libros.length>1?'. Hay '+(S.libros.length-1)+' más parecida'+(S.libros.length>2?'s':'')+': si no es esta, tocá la correcta abajo.':'.')+'<br>';
-    else o+='No hay una entrada con ese nombre en el libro. ';
+    if(S.libro)o+='📖 En el libro de Piñeiro: <b>'+esc(S.libro[0])+'</b> ('+esc(S.libro[1])+')'+(recordada?' (la que elegiste antes)':'')+(S.libros.length>1?'. Hay '+(S.libros.length-1)+' más parecida'+(S.libros.length>2?'s':'')+': si no es esta, tocá la correcta abajo (o «Ninguna de estas»).':'.')+'<br>';
+    else if(rech.length&&!S.libros.length)o+='Desvinculaste '+(rech.length>1?'las entradas':'la entrada')+' del libro para esta calle (tocá «Restaurar libro» para recuperar'+(rech.length>1?'las':'la')+'). ';
+    else o+=(recordada&&S.libros.length?'Elegiste que ninguna entrada del libro corresponde a esta calle. ':'No hay una entrada con ese nombre en el libro. ');
     if(guardado)o+='⭐ Artículo guardado en la ficha: <b>'+esc(tGuard)+'</b> (sin consultar internet).';
     else o+=e1?'📍 Según OpenStreetMap, la calle <b>'+esc(e1.via)+'</b> lleva el nombre de: <b>'+esc(e1.label)+'</b>'+(e1.desc?' ('+esc(e1.desc)+')':'')+'.':'No encontré en OpenStreetMap a quién refiere ese nombre.';
     if(S.libro&&S.wiki&&S.modo==='mix')o+='<br>🌐 Después se amplía con '+(resumen?'el resumen guardado de ':'Wikipedia: ')+'<b>'+esc(S.wiki)+'</b>.';
@@ -575,6 +598,9 @@ $('#cand').addEventListener('click',e=>{
   const bt=e.target.closest('.chip');if(!bt)return;
   const d=bt.dataset;
   if(d.modo){S.modo=d.modo;try{localStorage.setItem('qf-modo',S.modo);}catch(_){}}
+  else if(d.desv){if(!S.libro)return;desvincular(ACT.q,S.libro);if(ACT.q)$('#q').value=ACT.q;unlock();buscarYLeer();return;}
+  else if(d.rest){restaurarLibro(ACT.q);if(ACT.q)$('#q').value=ACT.q;unlock();buscarYLeer();return;}
+  else if(d.nin){guardarEleccion(ACT.q,null);S.libro=null;if(ACT.q)$('#q').value=ACT.q;unlock();buscarYLeer();return;}
   else if(d.b!==undefined){
     const e=S.libros[+d.b];if(!e)return;
     if(S.modo==='wiki')S.modo='mix';
@@ -594,7 +620,7 @@ $('#bStop').onclick=()=>{gpsPend=null;ses++;synth.cancel();terminar();};
 // ---------- Fichas por calle (IndexedDB "quienfue", store "calles", clave = norm(nombre)) ----------
 const FI=new Map();let idbDb=null;
 const ACT={q:''};                                   // calle actual
-const fichasListas=new Promise(res=>{
+const idbListas=new Promise(res=>{
   try{
     const rq=indexedDB.open('quienfue',1);
     rq.onupgradeneeded=()=>{rq.result.createObjectStore('calles');};
@@ -609,6 +635,30 @@ const fichasListas=new Promise(res=>{
     rq.onerror=rq.onblocked=()=>res();
   }catch(e){res();}
 });
+// Fichas compartidas: si junto a index.html hay un mis-calles.json (el que publicás en GitHub), se suman a las locales
+async function mezclarFichas(d){
+  const lista=Array.isArray(d)?d.map(r=>[r&&r.nombre,r]):Object.entries(d&&d.fichas?d.fichas:{});
+  let nu=0,ac=0,ig=0;
+  for(const [k0,r] of lista){
+    if(!r||typeof r!=='object'||!(r.nombre||r.wikiTexto||r.resumen||r.propio))continue;
+    const rec={nombre:String(r.nombre||k0||''),wikiTitulo:String(r.wikiTitulo||''),wikiTexto:String(r.wikiTexto||''),resumen:String(r.resumen||''),propio:String(r.propio||''),actualizado:+r.actualizado||0};
+    const k=norm(rec.nombre||k0||'');if(!k)continue;
+    const ex=FI.get(k);
+    if(!ex){await fPut(k,rec);nu++;}
+    else if(rec.actualizado>(+ex.actualizado||0)){await fPut(k,rec);ac++;}   // gana la más reciente
+    else ig++;
+  }
+  return {nu,ac,ig};
+}
+async function cargarBase(){
+  try{
+    const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),4000);
+    const r=await fetch('mis-calles.json',{cache:'no-cache',signal:ctl.signal});clearTimeout(to);
+    if(!r.ok)return;
+    await mezclarFichas(await r.json());
+  }catch(e){/* sin archivo compartido o sin conexión: se usan las fichas locales */}
+}
+const fichasListas=idbListas.then(cargarBase);
 function idbTx(modo,fn){return new Promise((ok,ko)=>{
   if(!idbDb){ok();return;}
   try{const tx=idbDb.transaction('calles',modo);fn(tx.objectStore('calles'));tx.oncomplete=()=>ok();tx.onerror=tx.onabort=()=>ko(tx.error||new Error('operación cancelada'));}
@@ -628,7 +678,7 @@ function fCont(){
   $('#fcnt').textContent='Fichas guardadas: '+n+' · con artículo sin resumir: '+sr+(idbDb?'':' · ⚠ sin IndexedDB: no se conservarán al cerrar');
 }
 fichasListas.then(fCont);
-const fMsg=(t,err)=>{const m=$('#fmsg');m.textContent=t||'';m.className=err?'err':'';};
+const fMsg=(t,err)=>{const m=$('#fmsg');m.textContent=t||'';m.className=err?'err':'';if(t){try{m.scrollIntoView({block:'nearest',behavior:'smooth'});}catch(_){}}};
 
 // ----- flujo principal: ⭐ guardar / desvincular el artículo de la calle actual -----
 function pintarFav(){
@@ -699,6 +749,7 @@ function fBuscar(){
 function fCand(ts){$('#fwcand').innerHTML=ts.map(t=>`<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join('');}
 function fPintar(){
   $('#fnom').textContent=FE.nombre;
+  $('#fwtexto').value=FE.wikiTexto||'';
   $('#fwinfo').textContent=FE.wikiTexto?('⭐ '+FE.wikiTitulo+' — '+FE.wikiTexto.length.toLocaleString('es-AR')+' caracteres'):'Sin artículo descargado.';
 }
 function fSel(x){
@@ -722,22 +773,34 @@ $('#fwbus').onclick=async()=>{
   try{
     const r=await buscar($('#fwq').value.trim()||fe.nombre);
     if(fe!==FE)return;
-    fCand(r.slice(0,8));fMsg(r.length?'Elegí un título de la lista y tocá «Descargar artículo completo».':'Wikipedia no encontró resultados.',!r.length);
+    fCand(r.slice(0,8));fMsg(r.length?'Elegí un título de la lista y tocá «Copiar texto completo».':'Wikipedia no encontró resultados.',!r.length);
   }catch(e){if(fe===FE)fMsg('Error al buscar: '+e.message,1);}
 };
+async function copiarTexto(t){
+  try{await navigator.clipboard.writeText(t);return true;}catch(_){}
+  const a=$('#fwtexto');$('#fwdet').open=true;a.removeAttribute('readonly');a.focus();a.select();
+  let ok=false;try{ok=document.execCommand('copy');}catch(_){}
+  a.setAttribute('readonly','');return ok;
+}
 $('#fwdesc').onclick=async()=>{
-  if(!FE)return;const fe=FE,b=$('#fwdesc');
+  if(!FE){fMsg('Primero elegí una calle de la lista (o escribí su nombre arriba y tocá «➕ Nueva»).',1);return;}
+  const fe=FE,b=$('#fwdesc'),ET='📋 Copiar texto completo';
   const t=$('#fwq').value.trim();
-  if(!t){fMsg('Escribí o elegí el título del artículo (podés usar «Buscar»).',1);return;}
-  b.disabled=true;fMsg('Descargando «'+t+'»…');
+  if(!t&&!fe.wikiTexto){fMsg('Escribí o elegí el título del artículo (podés usar «Buscar»).',1);return;}
+  b.disabled=true;
   try{
-    const ext=await extracto(t);
-    if(fe!==FE)return;
-    if(!ext){fMsg('Wikipedia no devolvió texto para ese título.',1);return;}
-    FE.wikiTitulo=t;FE.wikiTexto=ext;fPintar();
-    fMsg('Descargado: '+ext.length.toLocaleString('es-AR')+' caracteres. Tocá Guardar para conservarlo.');
-  }catch(e){if(fe===FE)fMsg('No se pudo descargar: '+e.message,1);}
-  finally{b.disabled=false;}
+    if(!fe.wikiTexto||(t&&t!==fe.wikiTitulo)){
+      b.textContent='⏳ Buscando texto…';fMsg('Buscando «'+t+'»…');
+      const ext=await extracto(t);
+      if(fe!==FE)return;
+      if(!ext){fMsg('Wikipedia no devolvió texto para ese título.',1);return;}
+      FE.wikiTitulo=t;FE.wikiTexto=ext;fPintar();
+    }
+    const n=FE.wikiTexto.length.toLocaleString('es-AR');
+    if(await copiarTexto(FE.wikiTexto))fMsg('Texto completo copiado al portapapeles ('+n+' caracteres). Tocá Guardar si querés conservarlo en la ficha.');
+    else fMsg('No se pudo copiar solo: abrí «Ver texto completo», mantené presionado y elegí Copiar todo.',1);
+  }catch(e){if(fe===FE)fMsg('No se pudo obtener el texto: '+e.message,1);}
+  finally{b.disabled=false;b.textContent=ET;}
 };
 $('#fauto').onclick=()=>{
   if(!FE)return;
@@ -779,17 +842,7 @@ $('#ffile').onchange=async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;
   try{
     const d=JSON.parse(await f.text());
-    const lista=Array.isArray(d)?d.map(r=>[r&&r.nombre,r]):Object.entries(d&&d.fichas?d.fichas:{});
-    let nu=0,ac=0,ig=0;
-    for(const [k0,r] of lista){
-      if(!r||typeof r!=='object'||!(r.nombre||r.wikiTexto||r.resumen||r.propio))continue;
-      const rec={nombre:String(r.nombre||k0||''),wikiTitulo:String(r.wikiTitulo||''),wikiTexto:String(r.wikiTexto||''),resumen:String(r.resumen||''),propio:String(r.propio||''),actualizado:+r.actualizado||0};
-      const k=norm(rec.nombre||k0||'');if(!k)continue;
-      const ex=FI.get(k);
-      if(!ex){await fPut(k,rec);nu++;}
-      else if(rec.actualizado>(+ex.actualizado||0)){await fPut(k,rec);ac++;}   // gana la más reciente
-      else ig++;
-    }
+    const {nu,ac,ig}=await mezclarFichas(d);
     FE=null;$('#fedit').hidden=true;fCont();fBuscar();pintarFav();
     fMsg('Importación lista: '+nu+' nuevas, '+ac+' actualizadas, '+ig+' sin cambios (la local era más reciente).');
   }catch(err){fMsg('No se pudo importar: '+(err&&err.message||err),1);}
