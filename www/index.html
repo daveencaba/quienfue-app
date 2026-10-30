@@ -30,6 +30,9 @@ label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
 .bar i{display:block;height:100%;width:0;background:var(--ac)}
 .tm{display:flex;justify-content:space-between;font-size:13px;color:var(--mut)}
 details summary{cursor:pointer;color:var(--mut);font-size:14px}
+textarea{width:100%;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:10px;font:inherit;font-size:15px;resize:vertical}
+#fmsg{font-size:14px;margin-top:8px;color:var(--mut)}
+#fmsg.err{color:var(--red)}
 #manos{display:none;position:fixed;inset:0;background:#000;z-index:99;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;touch-action:none;user-select:none;-webkit-user-select:none}
 #manos.on{display:flex}
 #manos div{color:#3d3d3d}
@@ -52,6 +55,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px}
     <div id="modo" class="mut" style="font-size:11px;margin-top:2px"></div>
     <div id="origen" class="mut" style="margin-top:10px"></div>
     <div class="chips" id="cand"></div>
+    <div class="row" id="fav" style="margin-top:8px"></div>
     <div id="msg"></div>
     <details style="margin-top:10px">
       <summary>Ajustes</summary>
@@ -74,6 +78,33 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px}
     </div>
     <p class="mut" id="src"></p>
   </div>
+  <details class="card" id="fichaSec">
+    <summary style="color:var(--tx);font-size:16px;font-weight:600">🗂 Ficha de calle</summary>
+    <div id="fcnt" class="mut" style="margin-top:8px"></div>
+    <label for="fq">Calle (libro, guardadas o la actual)</label>
+    <input type="search" id="fq" placeholder="Escribí para buscar o crear una ficha nueva" autocomplete="off">
+    <div class="chips" id="fres"></div>
+    <div id="fedit" hidden>
+      <b id="fnom" style="display:block;margin-top:14px;font-size:17px"></b>
+      <label for="flibro">📖 Texto del libro (solo lectura)</label>
+      <textarea id="flibro" rows="6" readonly></textarea>
+      <label for="fwq">🌐 Artículo de Wikipedia</label>
+      <div id="fwinfo" class="mut" style="margin-bottom:6px"></div>
+      <div class="row"><input type="search" id="fwq" placeholder="Título del artículo (o dejá vacío para buscar por el nombre)" autocomplete="off"><button id="fwbus">Buscar</button></div>
+      <div class="chips" id="fwcand"></div>
+      <button id="fwdesc" style="margin-top:8px;width:100%">⬇ Descargar artículo completo</button>
+      <label for="fresu">📝 Resumen (editable)</label>
+      <button id="fauto" style="width:100%;margin-bottom:6px">✨ Resumen automático</button>
+      <textarea id="fresu" rows="7" placeholder="Frases de origen del nombre, quién fue y fechas clave"></textarea>
+      <label for="fprop">✍️ Texto propio (editable; se lee primero)</label>
+      <textarea id="fprop" rows="5" placeholder="Tus propias notas sobre esta calle"></textarea>
+      <div class="row" style="margin-top:10px"><button class="p" id="fsave" style="flex:1">💾 Guardar</button><button id="fdel" style="flex:1">🗑 Borrar ficha</button></div>
+    </div>
+    <div id="fmsg"></div>
+    <div class="row" style="margin-top:14px"><button id="fexp" style="flex:1">⬆ Exportar mis-calles.json</button><button id="fimp" style="flex:1">⬇ Importar</button></div>
+    <input type="file" id="ffile" accept="application/json,.json" hidden>
+  </details>
+
   <p class="mut">Fuente principal: el libro de A. G. Piñeiro, <i>Barrios, calles y plazas de la Ciudad de Buenos Aires</i> (2008), cargado desde <code>calles.js</code> (debe estar en la misma carpeta que este archivo). Después amplía con Wikipedia. Para la parte de Wikipedia, primero identifica a quién refiere el nombre de la calle (OpenStreetMap/Wikidata) y busca eso en Wikipedia. Primero cuenta lo histórico (de dónde viene el nombre, quién fue) y después lo geográfico (ubicación y recorrido), ajustando la velocidad para que termine en el tiempo elegido. Siempre conviene confirmar que el artículo sea el de la persona o hecho que da nombre a la calle (usá los botones de arriba si no lo es).</p>
 </div>
 
@@ -110,8 +141,7 @@ $('#secs').onchange=()=>localStorage.setItem('qf-secs',$('#secs').value);
 const API='https://es.wikipedia.org/w/api.php';
 async function wiki(params){
   const u=API+'?'+new URLSearchParams({format:'json',origin:'*',...params});
-  const r=await fetch(u);if(!r.ok)throw new Error('Wikipedia no respondió ('+r.status+')');
-  return r.json();
+  return conTiempo(u,15000);
 }
 async function buscar(q){
   let d=await wiki({action:'query',list:'search',srsearch:q,srlimit:6,srinfo:'suggestion'});
@@ -121,7 +151,7 @@ async function buscar(q){
   return res.map(x=>x.title);
 }
 async function extracto(title){
-  const d=await wiki({action:'query',prop:'extracts',explaintext:1,exchars:6000,redirects:1,titles:title});
+  const d=await wiki({action:'query',prop:'extracts',explaintext:1,redirects:1,titles:title});
   const pg=Object.values((d.query&&d.query.pages)||{})[0];
   return (pg&&pg.extract)||'';
 }
@@ -161,26 +191,43 @@ function buscarLibro(q){
 const CABA='-34.705,-58.532,-34.526,-58.335';   // recuadro de la Ciudad de Buenos Aires
 async function conTiempo(url,ms,opts){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
+  if(opts&&opts.signal)opts.signal.addEventListener('abort',()=>c.abort());
   try{const r=await fetch(url,{...opts,signal:c.signal});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json();}
   finally{clearTimeout(t);}
 }
-// Servidores de Overpass (OpenStreetMap): si uno falla (502, saturado), prueba el siguiente
+// Servidores de Overpass (OpenStreetMap): se consultan todos a la vez y gana el primero que responda
 const OVERPASS=['https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass-api.de/api/interpreter'];
-let opOk=0;
 async function overpass(ql){
-  let ult;
-  for(let k=0;k<OVERPASS.length;k++){
-    const i=(opOk+k)%OVERPASS.length;
-    try{const d=await conTiempo(OVERPASS[i]+'?data='+encodeURIComponent(ql),12000);opOk=i;return d;}
-    catch(e){ult=e;console.warn('Overpass',OVERPASS[i],e.message);}
-  }
-  throw ult;
+  const ctrls=OVERPASS.map(()=>new AbortController());
+  try{
+    return await Promise.any(OVERPASS.map((u,i)=>
+      conTiempo(u+'?data='+encodeURIComponent(ql),8000,{signal:ctrls[i].signal}).catch(e=>{console.warn('Overpass',u,e.message);throw e;})));
+  }catch(e){throw new Error('Overpass no respondió');}
+  finally{ctrls.forEach(c=>c.abort());}
+}
+// Caché (memoria + localStorage) por clave normalizada
+const CMEM=new Map();
+function cget(ns,k){
+  const key='qf-c-'+ns+'-'+k;
+  if(CMEM.has(key))return CMEM.get(key);
+  try{const v=localStorage.getItem(key);if(v!==null){const o=JSON.parse(v);CMEM.set(key,o);return o;}}catch(e){}
+  return null;
+}
+function cset(ns,k,v){
+  const key='qf-c-'+ns+'-'+k;CMEM.set(key,v);
+  try{localStorage.setItem(key,JSON.stringify(v));}catch(e){}
 }
 async function calleNominatim(lat,lon){
   const d=await conTiempo('https://nominatim.openstreetmap.org/reverse?'+new URLSearchParams({format:'jsonv2',lat,lon,zoom:17,addressdetails:1,'accept-language':'es'}),10000);
   const a=d.address||{};return a.road||a.pedestrian||null;
 }
 async function porEtimologia(q){
+  const k=norm(q),c=cget('et',k);if(c)return c;
+  const r=await porEtimologiaNet(q);
+  if(r.length)cset('et',k,r);
+  return r;
+}
+async function porEtimologiaNet(q){
   const esc=q.replace(/["\\]/g,'').replace(/[.*+?^${}()|[\]]/g,'\\\\$&');
   const ql='[out:json][timeout:20];way["highway"]["name"~"(^| )'+esc+'$",i]('+CABA+');out tags 60;';
   const d=await overpass(ql);
@@ -283,7 +330,7 @@ function elegir(titulo,plan,secs){
 }
 
 // ---------- lectura con ajuste de velocidad ----------
-let cola=[],idx=0,activo=false,pausado=false,ses=0,activoSeg=0,secs=90,timer=null,wl=null;
+let cola=[],idx=0,activo=false,pausado=false,ses=0,activoSeg=0,secs=90,budget=90,ampl=null,timer=null,wl=null;
 function pintar(){
   $('#txt').innerHTML=cola.map((f,i)=>`<span data-i="${i}">${f.replace(/</g,'&lt;')} </span>`).join('');
 }
@@ -295,10 +342,10 @@ function tick(){
 }
 function hablar(mySes){
   if(!activo||mySes!==ses)return;
-  if(idx>=cola.length){terminar();return;}
+  if(idx>=cola.length){alFinal(mySes);return;}
   const texto=cola[idx];
   const resto=cola.slice(idx).reduce((a,f)=>a+f.length,0);
-  const tRest=Math.max(secs-activoSeg,2);
+  const tRest=Math.max(budget-activoSeg,2);
   const rate=Math.min(1.8,Math.max(0.75,resto/(cps*tRest)));
   const u=new SpeechSynthesisUtterance(texto);
   const v=voces[+$('#voz').value];
@@ -327,40 +374,102 @@ function terminar(){
   clearInterval(timer);if(wl){wl.release().catch(()=>{});wl=null;}
   if(typeof gpsOn!=='undefined'&&gpsOn&&gpsPend&&norm(gpsPend)!==norm(gpsCalle)){const c=gpsPend;setTimeout(()=>gpsCargar(c),800);}
 }
-async function leer(titulo,libro){
-  if(activo)synth.cancel();ses++;const mySes=ses;
-  $('#msg').textContent='';$('#play').hidden=false;$('#ttl').textContent=libro?libro[0]+' ('+libro[1]+')':titulo;
+function pintarFuente(libro,titulo,usoWiki,propio){
+  const partes=[];
+  if(propio)partes.push('Texto propio');
+  if(libro)partes.push('Piñeiro, <i>Barrios, calles y plazas de la Ciudad de Buenos Aires</i> (2008)');
+  if(titulo&&(usoWiki||(!libro&&!propio)))partes.push('<a href="https://es.wikipedia.org/wiki/'+encodeURIComponent(titulo.replace(/ /g,'_'))+'" target="_blank" rel="noopener">Wikipedia · '+titulo.replace(/</g,'&lt;')+'</a>');
+  $('#src').innerHTML='Fuente: '+partes.join(' + ');
+}
+const limpiarPropio=t=>String(t||'').replace(/([^.!?:;\s])[ \t]*\n+[ \t]*/g,'$1. ').replace(/\s*\n+\s*/g,' ').trim();
+// Texto de Wikipedia para una calle: usa lo guardado en la ficha (sin internet) o descarga el artículo
+function wikiPara(titulo,ficha){
+  const igual=ficha&&(!ficha.wikiTitulo||ficha.wikiTitulo===titulo);
+  const resumen=igual?(ficha.resumen||'').trim():'';
+  if(igual&&(ficha.wikiTexto||resumen))return Promise.resolve({titulo,ext:ficha.wikiTexto||'',resumen});
+  return extracto(titulo).then(ext=>({titulo,ext}));
+}
+// Frases de la parte de Wikipedia: el resumen guardado, o si no hay, el artículo (histórico y después geográfico)
+function armarWiki(v,resto,intro){
+  const tit=v.titulo;
+  const cab=intro||('Ampliando con Wikipedia: '+tit+'.');
+  if(v.resumen&&v.resumen.trim()){
+    const W=[cab],cap=Math.max(resto,2)*cps;let n=cab.length;
+    for(const f of frases(limpiarPropio(v.resumen))){if(W.length>1&&n>=cap)break;W.push(f);n+=f.length;}
+    return W.length>1?W:[];
+  }
+  const plan=preparar(v.ext||'');
+  if(!plan.hist.length&&!plan.geo.length)return [];
+  const W=elegir(tit,plan,Math.max(resto,2));
+  if(W.length<=1)return [];
+  W[0]=cab;return W;
+}
+// Termina el libro: en modo mix agrega Wikipedia con el tiempo que queda
+function cerrarCorto(){secs=Math.max(15,Math.round(activoSeg));$('#t2').textContent=fmt(secs);$('#pb').style.width='100%';terminar();}
+function alFinal(mySes){
+  const a=ampl;
+  if(!a||a.ses!==mySes||a.fin){terminar();return;}
+  const resto=secs-activoSeg;
+  if(resto*cps<=250){a.fin=true;cerrarCorto();return;}
+  if(!a.listo){
+    if(!a.avisado){a.avisado=true;cola.push('Buscando más información.');pintar();hablar(mySes);}
+    else a.esperando=true;                           // sigue cuando llegue
+    return;
+  }
+  a.fin=true;
+  const W=a.val?armarWiki(a.val,resto):[];
+  if(!W.length){cerrarCorto();return;}
+  cola.push(...W);budget=secs;pintar();pintarFuente(a.libro,a.val.titulo,true,a.propio);
+  hablar(mySes);
+}
+async function leer(titulo,libro,wp,ficha){
+  if(activo)synth.cancel();ses++;const mySes=ses;ampl=null;
+  const propio=limpiarPropio(ficha&&ficha.propio);
+  $('#msg').textContent='';$('#play').hidden=false;$('#ttl').textContent=libro?libro[0]+' ('+libro[1]+')':(titulo||(ficha&&ficha.nombre)||'');
   $('#txt').textContent='Buscando información…';$('#src').textContent='';
   secs=Math.max(20,+$('#secs').value||90);
   $('#t2').textContent=fmt(secs);$('#t1').textContent='0:00';$('#pb').style.width='0';
   try{
-    let ext='';
-    if(titulo){try{ext=await extracto(titulo);}catch(e){if(!libro)throw e;}}
-    if(mySes!==ses)return;
-    const plan=preparar(ext);
-    const hayWiki=plan.hist.length>0||plan.geo.length>0;
-    if(!libro&&!hayWiki){$('#txt').textContent='No encontré texto para ese artículo.';return;}
-    let c,usoWiki=hayWiki;
-    if(libro){
-      // 1º el libro (lo histórico: de dónde viene el nombre), 2º lo que falte de tiempo, con Wikipedia
+    let c,usoWiki=false;
+    if(libro||propio){
+      // Orden: 1º texto propio, 2º libro (sin esperar a internet), 3º Wikipedia (resumen guardado o artículo) con el tiempo que quede
+      if(!wp&&titulo)wp=wikiPara(titulo,ficha);
       const obj=secs*cps;
-      const L=[libro[0]+', '+libro[1]+'.'];let n=L[0].length;
-      for(const f of frases(libro[2])){if(L.length>1&&n>=obj)break;L.push(f);n+=f.length;}
-      c=L;usoWiki=false;
-      if(hayWiki&&obj-n>250){
-        const W=elegir(titulo,plan,(obj-n)/cps);
-        if(W.length>1){W[0]='Ampliando con Wikipedia: '+titulo+'.';c=[...L,...W];usoWiki=true;}
+      const L=[];let n=0;const add=f=>{L.push(f);n+=f.length;};
+      if(propio){
+        add((libro?libro[0]:(ficha&&ficha.nombre)||titulo||'Texto propio')+'.');
+        for(const f of frases(propio)){if(L.length>1&&n>=obj)break;add(f);}
       }
-      const est=c.reduce((a,f)=>a+f.length,0)/cps;
-      if(est<secs*0.85)secs=Math.max(15,Math.round(est));
-      $('#t2').textContent=fmt(secs);
-    }else c=elegir(titulo,plan,secs);
+      if(libro&&(!L.length||n<obj)){
+        add(propio?'Y según el libro de Piñeiro.':libro[0]+', '+libro[1]+'.');
+        const h=L.length;
+        for(const f of frases(libro[2])){if(L.length>h&&n>=obj)break;add(f);}
+      }
+      c=L;
+      const est=n/cps;
+      if(wp){
+        const a=ampl={ses:mySes,libro,propio:!!propio,listo:false,val:null,esperando:false,avisado:false,fin:false};
+        budget=est<secs*0.85?est:secs;
+        wp.then(v=>v,()=>null).then(v=>{
+          a.listo=true;a.val=v&&(v.ext||v.resumen)?v:null;
+          if(a.esperando&&activo&&ses===mySes){a.esperando=false;alFinal(mySes);}
+        });
+      }else{
+        budget=secs;
+        if(est<secs*0.85){secs=Math.max(15,Math.round(est));budget=secs;}
+        $('#t2').textContent=fmt(secs);
+      }
+    }else{
+      const v=await wikiPara(titulo,ficha);
+      if(mySes!==ses)return;
+      const W=armarWiki(v,secs,titulo+'.');
+      if(!W.length){$('#txt').textContent='No encontré texto para ese artículo.';return;}
+      c=W;usoWiki=true;budget=secs;
+    }
+    if(mySes!==ses)return;
     cola=c;idx=0;activoSeg=0;pausado=false;activo=true;
     pintar();
-    const partes=[];
-    if(libro)partes.push('Piñeiro, <i>Barrios, calles y plazas de la Ciudad de Buenos Aires</i> (2008)');
-    if(usoWiki||!libro)partes.push('<a href="https://es.wikipedia.org/wiki/'+encodeURIComponent(titulo.replace(/ /g,'_'))+'" target="_blank" rel="noopener">Wikipedia · '+titulo.replace(/</g,'&lt;')+'</a>');
-    $('#src').innerHTML='Fuente: '+partes.join(' + ');
+    pintarFuente(libro,titulo,usoWiki,!!propio);
     $('#bPause').disabled=false;$('#bStop').disabled=false;
     clearInterval(timer);timer=setInterval(tick,250);
     try{if(navigator.wakeLock)wl=await navigator.wakeLock.request('screen');}catch(e){}
@@ -375,8 +484,9 @@ const MODOS=[['mix','🔀 Libro + Wikipedia'],['libro','📖 Solo libro'],['wiki
 function reproducir(){
   let l=S.modo==='wiki'?null:S.libro,w=S.modo==='libro'?null:S.wiki;
   if(!l&&!w){l=S.libro;w=S.wiki;}                  // el modo elegido no tiene datos: usar lo que haya
-  if(!l&&!w)return;
-  leer(w,l);
+  const fi=fichaDe(ACT.q);
+  if(!l&&!w&&!(fi&&(fi.propio||'').trim()))return;
+  leer(w,l,null,fi);
 }
 const unlock=()=>{try{const w=new SpeechSynthesisUtterance(' ');w.volume=0;synth.speak(w);}catch(e){}};
 function chips(){
@@ -384,38 +494,68 @@ function chips(){
   const x=S.libros.length?MODOS.map(([m,t])=>`<button class="chip${S.modo===m?' on':''}" data-modo="${m}">${t}</button>`):[];
   const w=S.wikis.map(c=>`<button class="chip${S.wiki===c.t&&S.modo!=='libro'?' on':''}" data-t="${esc(c.t)}">${c.et?'📍 ':''}${esc(c.label)}</button>`);
   $('#cand').innerHTML=[...x,...b,...w].join('');
+  pintarFav();
+}
+let busq=0;
+// Internet en segundo plano: origen del nombre (OpenStreetMap/Wikidata) y candidatos de Wikipedia
+function wikiBg(q){
+  const nomLibro=S.libro?((S.libro[2].match(/^([^(:;,.]{3,70}?)\s*[(:]/)||[])[1]||S.libro[0]).trim():'';
+  return Promise.all([
+    porEtimologia(q).catch(e=>{console.warn('etimología',e);return [];}),
+    buscar(q).catch(()=>[]),
+    (nomLibro&&norm(nomLibro)!==norm(q))?buscar(nomLibro).catch(()=>[]):Promise.resolve([])]).then(([et,res,res2])=>{
+    const cands=et.map(c=>({t:c.title,label:c.label,desc:c.desc,via:c.via,et:1}));
+    const usados=new Set(cands.map(c=>c.t));
+    [...res2,...res].forEach(t=>{if(!usados.has(t)){usados.add(t);cands.push({t,label:t,et:0});}});
+    // con libro: se complementa solo con un artículo cuyo origen está confirmado (📍); si no, queda el libro solo
+    const wiki=S.libro?((cands.find(c=>c.et)||{}).t||res2[0]||res[0]||null):(cands[0]?cands[0].t:null);
+    return {cands,wiki,et};
+  });
 }
 async function buscarYLeer(){
   const q=$('#q').value.trim();
   if(!q||!synth)return;
   unlock();   // "desbloquea" el audio en el celular mientras todavía estamos dentro del toque del usuario
+  const my=++busq;
   $('#msg').textContent='';$('#cand').innerHTML='';
   S.libros=buscarLibro(q);S.libro=S.libros[0]||null;S.wikis=[];S.wiki=null;
+  ACT.q=q;
   $('#origen').textContent='🔎 Buscando a quién o a qué refiere el nombre de la calle…';
   try{
-    // Fuente principal: el libro (ya cargado). Complemento: origen del nombre (OpenStreetMap/Wikidata) y Wikipedia.
-    const nomLibro=S.libro?((S.libro[2].match(/^([^(:;,.]{3,70}?)\s*[(:]/)||[])[1]||S.libro[0]).trim():'';
-    const [et,res,res2]=await Promise.all([
-      porEtimologia(q).catch(e=>{console.warn('etimología',e);return [];}),
-      buscar(q).catch(()=>[]),
-      (nomLibro&&norm(nomLibro)!==norm(q))?buscar(nomLibro).catch(()=>[]):Promise.resolve([])]);
-    const cands=et.map(c=>({t:c.title,label:c.label,desc:c.desc,via:c.via,et:1}));
-    const usados=new Set(cands.map(c=>c.t));
-    [...res2,...res].forEach(t=>{if(!usados.has(t)){usados.add(t);cands.push({t,label:t,et:0});}});
-    S.wikis=cands;
-    // con libro: se complementa solo con un artículo cuyo origen está confirmado (📍); si no, queda el libro solo
-    S.wiki=S.libro?((cands.find(c=>c.et)||{}).t||res2[0]||res[0]||null):(cands[0]?cands[0].t:null);
-    if(!S.libro&&!cands.length){$('#origen').textContent='';$('#msg').textContent='No encontré resultados para «'+q+'». Probá con otra grafía.';avisar('No encontré información sobre '+q+'.');return;}
+    await fichasListas;
+    if(my!==busq)return;
+    const fi=fichaDe(q);
+    const guardado=!!(fi&&fi.wikiTexto),resumen=((fi&&fi.resumen)||'').trim(),propio=((fi&&fi.propio)||'').trim();
+    const tGuard=guardado?(fi.wikiTitulo||fi.nombre||q):null;
+    // Con artículo guardado no se consulta internet; si no, en segundo plano
+    const fin=guardado?Promise.resolve({cands:[],wiki:tGuard,et:[]}):wikiBg(q);
+    // Con texto propio o entrada del libro: se empieza a leer ya, sin esperar a internet
+    const lib=(S.libro&&S.modo!=='wiki')?S.libro:null;
+    const ya=!!lib||!!propio;
+    if(ya){
+      let wp=null;
+      if(S.modo!=='libro'){
+        if(guardado||resumen)wp=Promise.resolve({titulo:tGuard||fi.nombre||q,ext:fi.wikiTexto||'',resumen});
+        else wp=fin.then(r=>r.wiki?extracto(r.wiki).then(ext=>({titulo:r.wiki,ext})):null);
+      }
+      leer(null,lib,wp,fi);
+    }
+    const {cands,wiki,et}=await fin;
+    if(my!==busq)return;
+    S.wikis=cands;S.wiki=wiki;
+    if(!S.libro&&!propio&&!guardado&&!cands.length){$('#origen').textContent='';$('#msg').textContent='No encontré resultados para «'+q+'». Probá con otra grafía.';avisar('No encontré información sobre '+q+'.');return;}
     const e1=cands.find(c=>c.et);
     let o='';
+    if(propio)o+='✍️ Hay un texto propio para esta calle: se lee primero.<br>';
     if(S.libro)o+='📖 En el libro de Piñeiro: <b>'+esc(S.libro[0])+'</b> ('+esc(S.libro[1])+')'+(S.libros.length>1?'. Hay otras entradas abajo.':'.')+'<br>';
     else o+='No hay una entrada con ese nombre en el libro. ';
-    o+=e1?'📍 Según OpenStreetMap, la calle <b>'+esc(e1.via)+'</b> lleva el nombre de: <b>'+esc(e1.label)+'</b>'+(e1.desc?' ('+esc(e1.desc)+')':'')+'.':'No encontré en OpenStreetMap a quién refiere ese nombre.';
-    if(S.libro&&S.wiki&&S.modo==='mix')o+='<br>🌐 Después se amplía con Wikipedia: <b>'+esc(S.wiki)+'</b>.';
+    if(guardado)o+='⭐ Artículo guardado en la ficha: <b>'+esc(tGuard)+'</b> (sin consultar internet).';
+    else o+=e1?'📍 Según OpenStreetMap, la calle <b>'+esc(e1.via)+'</b> lleva el nombre de: <b>'+esc(e1.label)+'</b>'+(e1.desc?' ('+esc(e1.desc)+')':'')+'.':'No encontré en OpenStreetMap a quién refiere ese nombre.';
+    if(S.libro&&S.wiki&&S.modo==='mix')o+='<br>🌐 Después se amplía con '+(resumen?'el resumen guardado de ':'Wikipedia: ')+'<b>'+esc(S.wiki)+'</b>.';
     $('#origen').innerHTML=o;
     chips();
-    reproducir();
-  }catch(e){$('#origen').textContent='';$('#msg').textContent='Error al buscar: '+e.message;}
+    if(!ya)reproducir();
+  }catch(e){if(my!==busq)return;$('#origen').textContent='';$('#msg').textContent='Error al buscar: '+e.message;}
 }
 $('#bGo').onclick=buscarYLeer;
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter')buscarYLeer();});
@@ -434,6 +574,210 @@ $('#bPause').onclick=()=>{
   else{synth.pause();pausado=true;$('#bPause').textContent='▶ Continuar';}
 };
 $('#bStop').onclick=()=>{gpsPend=null;ses++;synth.cancel();terminar();};
+// ---------- Fichas por calle (IndexedDB "quienfue", store "calles", clave = norm(nombre)) ----------
+const FI=new Map();let idbDb=null;
+const ACT={q:''};                                   // calle actual
+const fichasListas=new Promise(res=>{
+  try{
+    const rq=indexedDB.open('quienfue',1);
+    rq.onupgradeneeded=()=>{rq.result.createObjectStore('calles');};
+    rq.onsuccess=()=>{
+      idbDb=rq.result;
+      try{
+        const tx=idbDb.transaction('calles'),st=tx.objectStore('calles'),rk=st.getAllKeys(),rv=st.getAll();
+        tx.oncomplete=()=>{rk.result.forEach((k,i)=>FI.set(k,rv.result[i]));res();};
+        tx.onerror=tx.onabort=()=>res();
+      }catch(e){res();}
+    };
+    rq.onerror=rq.onblocked=()=>res();
+  }catch(e){res();}
+});
+function idbTx(modo,fn){return new Promise((ok,ko)=>{
+  if(!idbDb){ok();return;}
+  try{const tx=idbDb.transaction('calles',modo);fn(tx.objectStore('calles'));tx.oncomplete=()=>ok();tx.onerror=tx.onabort=()=>ko(tx.error||new Error('operación cancelada'));}
+  catch(e){ko(e);}
+});}
+async function fPut(k,r){FI.set(k,r);await idbTx('readwrite',st=>st.put(r,k));}
+async function fDel(k){FI.delete(k);await idbTx('readwrite',st=>st.delete(k));}
+// clave de la ficha de una calle: la propia o, si no hay, la del nombre que le da el libro
+function claveDe(q){
+  const k=norm(q);if(FI.has(k))return k;
+  if(S.libro){const kl=norm(S.libro[0]);if(FI.has(kl))return kl;}
+  return k;
+}
+const fichaDe=q=>q?(FI.get(claveDe(q))||null):null;
+function fCont(){
+  let n=0,sr=0;for(const r of FI.values()){n++;if(r.wikiTexto&&!(r.resumen||'').trim())sr++;}
+  $('#fcnt').textContent='Fichas guardadas: '+n+' · con artículo sin resumir: '+sr+(idbDb?'':' · ⚠ sin IndexedDB: no se conservarán al cerrar');
+}
+fichasListas.then(fCont);
+const fMsg=(t,err)=>{const m=$('#fmsg');m.textContent=t||'';m.className=err?'err':'';};
+
+// ----- flujo principal: ⭐ guardar / desvincular el artículo de la calle actual -----
+function pintarFav(){
+  const el=$('#fav');if(!el)return;
+  const fi=ACT.q?fichaDe(ACT.q):null;
+  if(fi&&fi.wikiTexto)el.innerHTML='<span class="mut" style="flex:1;align-self:center">⭐ Guardado: <b>'+esc(fi.wikiTitulo||fi.nombre)+'</b></span><button id="bDesv">Desvincular</button>';
+  else if(S.wiki&&ACT.q)el.innerHTML='<button id="bFav" style="flex:1">⭐ Guardar este artículo para esta calle</button>';
+  else el.innerHTML='';
+}
+async function favGuardar(b){
+  const t=S.wiki,q=ACT.q;if(!t||!q)return;
+  const k=claveDe(q);b.disabled=true;b.textContent='Descargando artículo…';
+  try{
+    const ext=await extracto(t);
+    if(!ext){$('#msg').textContent='Wikipedia no devolvió texto para «'+t+'».';return;}
+    const r=FI.get(k)||{};
+    await fPut(k,{nombre:r.nombre||q,wikiTitulo:t,wikiTexto:ext,resumen:r.resumen||'',propio:r.propio||'',actualizado:Date.now()});
+    fCont();
+  }catch(e){$('#msg').textContent='No se pudo guardar el artículo: '+e.message;}
+  finally{if(ACT.q===q)pintarFav();}
+}
+async function favDesvincular(){
+  const q=ACT.q,k=claveDe(q),r=FI.get(k);if(!r)return;
+  const rec={...r,wikiTitulo:'',wikiTexto:'',actualizado:Date.now()};
+  try{if(!(rec.resumen||'').trim()&&!(rec.propio||'').trim())await fDel(k);else await fPut(k,rec);}
+  catch(e){$('#msg').textContent='No se pudo desvincular: '+e.message;return;}
+  fCont();S.wikis=[];S.wiki=null;chips();
+  wikiBg(q).then(r2=>{if(ACT.q!==q)return;S.wikis=r2.cands;S.wiki=r2.wiki;chips();}).catch(()=>{});
+}
+$('#fav').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.id==='bFav')favGuardar(b);else if(b.id==='bDesv')favDesvincular();
+});
+
+// ----- resumen automático (extractivo): origen del nombre, quién fue y fechas clave -----
+const QUIEN=/\b(fue un|fue una|fue el|fue la|fueron|era un|era una|naci[oó]|falleci[oó]|muri[oó]|se desempe[ñn][oó]|se destac[oó]|fund[oó]|comand[oó]|gobern[oó])/i;
+function resumenAuto(ext,cap){
+  const plan=preparar(ext);
+  let pool=plan.hist.map((f,i)=>({f,i}));
+  if(pool.length<3)pool=pool.concat(plan.geo.map((f,i)=>({f,i:1e5+i})));
+  pool=pool.filter(o=>o.f.length>=40);
+  for(const o of pool){
+    const f=o.f;
+    o.s=(ORIGEN.test(f)?6:0)+(o.i<2?4:0)+(QUIEN.test(f)?3:0)+Math.min(3,(f.match(/\b(1[0-9]{3}|20[0-2][0-9])\b/g)||[]).length)+Math.min(2,(f.match(HIST)||[]).length)*0.5-(f.length>400?1:0);
+  }
+  const orden=[...pool].sort((a,b)=>b.s-a.s||a.i-b.i),sel=[];let n=0;
+  for(const o of orden){
+    if(n>=cap*0.97)break;
+    if(n+o.f.length>cap*1.15&&n>cap*0.5)continue;
+    sel.push(o);n+=o.f.length+1;
+  }
+  sel.sort((a,b)=>a.i-b.i);
+  return sel.map(o=>o.f).join(' ');
+}
+
+// ----- pantalla "Ficha de calle" -----
+let FE=null,FRES=[];
+function fBuscar(){
+  const t=$('#fq').value.trim(),nt=norm(t),it=[],vis=new Set();
+  const add=(n,tag,ex)=>{const o={n,tag,k:norm(n),...ex};if(!n||!o.k||vis.has(o.k))return;vis.add(o.k);it.push(o);};
+  if(ACT.q&&(!nt||norm(ACT.q).includes(nt)))add(ACT.q,'📍',{k:claveDe(ACT.q)});
+  [...FI.entries()].filter(([k,r])=>!nt||norm(r.nombre||k).includes(nt)).sort((a,b)=>(a[1].nombre||'').localeCompare(b[1].nombre||'')).slice(0,15).forEach(([k,r])=>add(r.nombre||k,'⭐',{k}));
+  if(t)buscarLibro(t).forEach(e=>add(e[0],'📖',{libro:e}));
+  if(t)add(t,'➕ Nueva:',{});
+  FRES=it;
+  $('#fres').innerHTML=it.map((x,i)=>`<button class="chip${FE&&FE.k===x.k?' on':''}" data-i="${i}">${x.tag} ${esc(x.n)}</button>`).join('');
+}
+function fCand(ts){$('#fwcand').innerHTML=ts.map(t=>`<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join('');}
+function fPintar(){
+  $('#fnom').textContent=FE.nombre;
+  $('#fwinfo').textContent=FE.wikiTexto?('⭐ '+FE.wikiTitulo+' — '+FE.wikiTexto.length.toLocaleString('es-AR')+' caracteres'):'Sin artículo descargado.';
+}
+function fSel(x){
+  if(!x)return;
+  const r=FI.get(x.k)||{},esAct=x.tag==='📍';
+  FE={k:x.k,nombre:r.nombre||x.n,wikiTitulo:r.wikiTitulo||'',wikiTexto:r.wikiTexto||''};
+  const libs=x.libro?[x.libro]:(esAct?S.libros.slice(0,1):buscarLibro(x.n).slice(0,1));
+  $('#flibro').value=libs.length?libs.map(e=>e[0]+' ('+e[1]+')\n'+e[2]).join('\n\n'):'(Esta calle no tiene entrada en el libro.)';
+  $('#fresu').value=r.resumen||'';$('#fprop').value=r.propio||'';
+  $('#fwq').value=FE.wikiTitulo||(esAct&&S.wiki)||'';
+  fCand(esAct&&!FE.wikiTexto?S.wikis.slice(0,8).map(c=>c.t):[]);
+  $('#fedit').hidden=false;fPintar();fBuscar();fMsg('');
+}
+$('#fichaSec').addEventListener('toggle',()=>{if($('#fichaSec').open)fBuscar();});
+$('#fq').addEventListener('input',fBuscar);
+$('#fres').addEventListener('click',e=>{const b=e.target.closest('.chip');if(b)fSel(FRES[+b.dataset.i]);});
+$('#fwcand').addEventListener('click',e=>{const b=e.target.closest('.chip');if(b)$('#fwq').value=b.dataset.t;});
+$('#fwbus').onclick=async()=>{
+  if(!FE)return;const fe=FE;
+  fMsg('Buscando en Wikipedia…');
+  try{
+    const r=await buscar($('#fwq').value.trim()||fe.nombre);
+    if(fe!==FE)return;
+    fCand(r.slice(0,8));fMsg(r.length?'Elegí un título de la lista y tocá «Descargar artículo completo».':'Wikipedia no encontró resultados.',!r.length);
+  }catch(e){if(fe===FE)fMsg('Error al buscar: '+e.message,1);}
+};
+$('#fwdesc').onclick=async()=>{
+  if(!FE)return;const fe=FE,b=$('#fwdesc');
+  const t=$('#fwq').value.trim();
+  if(!t){fMsg('Escribí o elegí el título del artículo (podés usar «Buscar»).',1);return;}
+  b.disabled=true;fMsg('Descargando «'+t+'»…');
+  try{
+    const ext=await extracto(t);
+    if(fe!==FE)return;
+    if(!ext){fMsg('Wikipedia no devolvió texto para ese título.',1);return;}
+    FE.wikiTitulo=t;FE.wikiTexto=ext;fPintar();
+    fMsg('Descargado: '+ext.length.toLocaleString('es-AR')+' caracteres. Tocá Guardar para conservarlo.');
+  }catch(e){if(fe===FE)fMsg('No se pudo descargar: '+e.message,1);}
+  finally{b.disabled=false;}
+};
+$('#fauto').onclick=()=>{
+  if(!FE)return;
+  if(!FE.wikiTexto){fMsg('Primero descargá el artículo de Wikipedia.',1);return;}
+  const cap=Math.max(20,+$('#secs').value||90)*cps,r=resumenAuto(FE.wikiTexto,cap);
+  if(!r){fMsg('No pude extraer frases útiles del artículo.',1);return;}
+  $('#fresu').value=r;fMsg('Resumen generado ('+r.length.toLocaleString('es-AR')+' caracteres, objetivo ≈ '+Math.round(cap).toLocaleString('es-AR')+'). Editalo si querés y tocá Guardar.');
+};
+$('#fsave').onclick=async()=>{
+  if(!FE)return;
+  const rec={nombre:FE.nombre,wikiTitulo:FE.wikiTitulo,wikiTexto:FE.wikiTexto,resumen:$('#fresu').value.trim(),propio:$('#fprop').value.trim(),actualizado:Date.now()};
+  if(!rec.wikiTexto&&!rec.resumen&&!rec.propio){fMsg('La ficha está vacía: descargá un artículo o escribí algo.',1);return;}
+  try{await fPut(FE.k,rec);}catch(e){fMsg('No se pudo guardar: '+(e&&e.message||e),1);return;}
+  fMsg('Ficha guardada ✔');fCont();fBuscar();pintarFav();
+};
+$('#fdel').onclick=async()=>{
+  if(!FE)return;
+  if(!FI.has(FE.k)){fMsg('Esta calle todavía no tiene ficha guardada.',1);return;}
+  if(!confirm('¿Borrar la ficha de «'+FE.nombre+'»?'))return;
+  try{await fDel(FE.k);}catch(e){fMsg('No se pudo borrar: '+(e&&e.message||e),1);return;}
+  FE.wikiTitulo='';FE.wikiTexto='';$('#fresu').value='';$('#fprop').value='';fPintar();
+  fMsg('Ficha borrada.');fCont();fBuscar();pintarFav();
+};
+// ----- exportar / importar mis-calles.json -----
+$('#fexp').onclick=async()=>{
+  if(!FI.size){fMsg('No hay fichas para exportar.',1);return;}
+  const data={app:'quienfue',version:1,exportado:Date.now(),fichas:Object.fromEntries(FI)};
+  const file=new File([JSON.stringify(data)],'mis-calles.json',{type:'application/json'});
+  try{
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'mis-calles.json'});fMsg('Exportadas '+FI.size+' fichas ✔');return;}
+  }catch(e){if(e&&e.name==='AbortError')return;console.warn('share',e);}
+  const url=URL.createObjectURL(file),a=document.createElement('a');
+  a.href=url;a.download='mis-calles.json';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+  fMsg('Descargado mis-calles.json con '+FI.size+' fichas.');
+};
+$('#fimp').onclick=()=>$('#ffile').click();
+$('#ffile').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    const lista=Array.isArray(d)?d.map(r=>[r&&r.nombre,r]):Object.entries(d&&d.fichas?d.fichas:{});
+    let nu=0,ac=0,ig=0;
+    for(const [k0,r] of lista){
+      if(!r||typeof r!=='object'||!(r.nombre||r.wikiTexto||r.resumen||r.propio))continue;
+      const rec={nombre:String(r.nombre||k0||''),wikiTitulo:String(r.wikiTitulo||''),wikiTexto:String(r.wikiTexto||''),resumen:String(r.resumen||''),propio:String(r.propio||''),actualizado:+r.actualizado||0};
+      const k=norm(rec.nombre||k0||'');if(!k)continue;
+      const ex=FI.get(k);
+      if(!ex){await fPut(k,rec);nu++;}
+      else if(rec.actualizado>(+ex.actualizado||0)){await fPut(k,rec);ac++;}   // gana la más reciente
+      else ig++;
+    }
+    FE=null;$('#fedit').hidden=true;fCont();fBuscar();pintarFav();
+    fMsg('Importación lista: '+nu+' nuevas, '+ac+' actualizadas, '+ig+' sin cambios (la local era más reciente).');
+  }catch(err){fMsg('No se pudo importar: '+(err&&err.message||err),1);}
+};
+
 // ---------- GPS: calle donde estás ----------
 let gpsFix=0,gpsVisto='',gpsConFix=false,gpsPerdido=false,gpsSinDatos=false,gpsPrec=0,gpsIni=0;
 let gpsOn=false,gpsId=null,gpsUlt=null,gpsCalle='',gpsPend=null,gpsBusy=false,gpsWL=null;
@@ -447,17 +791,28 @@ function distSeg(p,a,b){                       // metros del punto p al segmento
   return Math.hypot(ax+t*dx,ay+t*dy);
 }
 async function calleCercana(lat,lon){
+  const k=lat.toFixed(4)+','+lon.toFixed(4),c=cget('cc',k);if(c)return c;
+  const r=await calleCercanaNet(lat,lon);
+  if(r)cset('cc',k,r);
+  return r;
+}
+async function calleCercanaNet(lat,lon){
   const ql='[out:json][timeout:15];way(around:40,'+lat+','+lon+')["highway"]["name"];out tags geom;';
-  let d;try{d=await overpass(ql);}catch(e){return await calleNominatim(lat,lon);}
-  const BAJA=/^(footway|path|steps|cycleway|pedestrian|service|track)$/;
-  let mejor=null;
-  for(const el of d.elements||[]){
-    const g=el.geometry||[];if(g.length<2)continue;
-    let m=1e9;for(let i=1;i<g.length;i++)m=Math.min(m,distSeg({lat,lon},g[i-1],g[i]));
-    if(BAJA.test((el.tags||{}).highway))m+=15;       // veredas y pasillos pesan menos que la calle
-    if(!mejor||m<mejor.m)mejor={m,name:el.tags.name};
-  }
-  return mejor&&mejor.name;
+  const viaOp=(async()=>{
+    const d=await overpass(ql);
+    const BAJA=/^(footway|path|steps|cycleway|pedestrian|service|track)$/;
+    let mejor=null;
+    for(const el of d.elements||[]){
+      const g=el.geometry||[];if(g.length<2)continue;
+      let m=1e9;for(let i=1;i<g.length;i++)m=Math.min(m,distSeg({lat,lon},g[i-1],g[i]));
+      if(BAJA.test((el.tags||{}).highway))m+=15;       // veredas y pasillos pesan menos que la calle
+      if(!mejor||m<mejor.m)mejor={m,name:el.tags.name};
+    }
+    if(!mejor||!mejor.name)throw new Error('sin calle');
+    return mejor.name;
+  })();
+  const viaNom=calleNominatim(lat,lon).then(n=>{if(!n)throw new Error('sin calle');return n;});
+  try{return await Promise.any([viaOp,viaNom]);}catch(e){return null;}
 }
 function gpsCargar(c,cortar){
   if(!gpsOn)return;
