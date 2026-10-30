@@ -1,0 +1,12 @@
+{
+  "name": "quienfue-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "¿Quién fue? — app para iPhone",
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor-community/background-geolocation": "^1.2.0"
+  }
+}

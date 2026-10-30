@@ -1,0 +1,8 @@
+{
+  "appId": "com.dave.quienfue",
+  "appName": "Quien fue",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always"
+  }
+}
