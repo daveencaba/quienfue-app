@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>¿Quién fue?</title>
+<style>
+:root{--bg:#eef3f8;--card:#fff;--tx:#16212e;--mut:#5b6b7d;--bd:#d5e0ec;--ac:#16a34a;--red:#dc2626;--hl:#fef3c7}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1722;--card:#172233;--tx:#e8eef5;--mut:#9aa8b8;--bd:#26364a;--hl:#4a3412}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+input,select,button{font:inherit;color:inherit}
+input[type=search],input[type=number],select{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px;width:100%}
+.row{display:flex;gap:8px}
+button{border:1px solid var(--bd);background:var(--card);border-radius:8px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+button:disabled{opacity:.5}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+.mut{color:var(--mut);font-size:13px}
+#msg{color:var(--red);font-size:14px;margin-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{border-radius:99px;padding:5px 11px;font-size:13px}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff}
+#txt{font-size:17px;line-height:1.55}
+#txt span.on{background:var(--hl);border-radius:4px}
+.bar{height:8px;background:var(--bd);border-radius:99px;overflow:hidden;margin:8px 0 4px}
+.bar i{display:block;height:100%;width:0;background:var(--ac)}
+.tm{display:flex;justify-content:space-between;font-size:13px;color:var(--mut)}
+details summary{cursor:pointer;color:var(--mut);font-size:14px}
+#manos{display:none;position:fixed;inset:0;background:#000;z-index:99;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;touch-action:none;user-select:none;-webkit-user-select:none}
+#manos.on{display:flex}
+#manos div{color:#3d3d3d}
+</style>
+</head>
+<body>
+<div id="manos"><div style="font-size:15px">🎧 Manos libres activo</div><div id="mCalle" style="font-size:18px;margin-top:10px"></div><div id="mEst" style="font-size:13px;margin-top:18px"></div><div id="mHora" style="font-size:12px;margin-top:6px"></div><div id="mCmd" style="font-size:12px;margin-top:6px"></div><div id="mSal" style="font-size:13px;margin-top:28px">Mantené presionada la pantalla 2 segundos para salir</div></div>
+<div class="wrap">
+  <h1>🚶 ¿Quién fue?</h1>
+
+  <div class="card">
+    <label for="q" style="margin-top:0">Nombre de la calle</label>
+    <div class="row">
+      <input type="search" id="q" placeholder="Ej: Bernardo de Irigoyen" autocomplete="off">
+      <button class="p" id="bGo">Buscar</button>
+    </div>
+    <div class="row" style="margin-top:8px"><button id="bGps" style="flex:1">📍 Seguir por GPS</button><button id="bManos" class="p" style="flex:1">🎧 Manos libres</button></div>
+    <div class="row" style="margin-top:8px"><button id="bVoz" style="flex:1">🎙 Comandos de voz</button></div>
+    <div id="gps" class="mut" style="margin-top:6px"></div>
+    <div id="origen" class="mut" style="margin-top:10px"></div>
+    <div class="chips" id="cand"></div>
+    <div id="msg"></div>
+    <details style="margin-top:10px">
+      <summary>Ajustes</summary>
+      <label for="secs">Duración (segundos) — lo que tardás en hacer una cuadra</label>
+      <input type="number" id="secs" min="20" max="600" value="90">
+      <label for="voz">Voz</label>
+      <select id="voz"></select>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:14px;color:var(--tx)"><input type="checkbox" id="avisos" checked> Avisos de estado por voz (GPS, errores, modo)</label>
+    </details>
+  </div>
+
+  <div class="card" id="play" hidden>
+    <b id="ttl"></b>
+    <div class="bar"><i id="pb"></i></div>
+    <div class="tm"><span id="t1">0:00</span><span id="t2">1:30</span></div>
+    <div id="txt" style="margin-top:10px"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="bPause" disabled>⏸ Pausar</button>
+      <button id="bStop" disabled>⏹ Detener</button>
+    </div>
+    <p class="mut" id="src"></p>
+  </div>
+  <p class="mut">Fuente principal: el libro de A. G. Piñeiro, <i>Barrios, calles y plazas de la Ciudad de Buenos Aires</i> (2008), cargado desde <code>calles.js</code> (debe estar en la misma carpeta que este archivo). Después amplía con Wikipedia. Para la parte de Wikipedia, primero identifica a quién refiere el nombre de la calle (OpenStreetMap/Wikidata) y busca eso en Wikipedia. Primero cuenta lo histórico (de dónde viene el nombre, quién fue) y después lo geográfico (ubicación y recorrido), ajustando la velocidad para que termine en el tiempo elegido. Siempre conviene confirmar que el artículo sea el de la persona o hecho que da nombre a la calle (usá los botones de arriba si no lo es).</p>
+</div>
+
+<script src="calles.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const synth=window.speechSynthesis;
+const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+let voces=[];
+let cps=+(localStorage.getItem('qf-cps')||14);   // caracteres por segundo a velocidad 1 (se va calibrando)
+let sesion=0;                                     // invalida lecturas anteriores
+
+// ---------- voces ----------
+function cargarVoces(){
+  if(!synth)return;
+  voces=synth.getVoices();if(!voces.length)return;
+  const es=v=>/^es/i.test(v.lang);
+  const ord=[...voces].sort((a,b)=>(es(b)-es(a))||a.lang.localeCompare(b.lang)||a.name.localeCompare(b.name));
+  const prev=$('#voz').value;
+  $('#voz').innerHTML=ord.map(v=>`<option value="${voces.indexOf(v)}">${v.name} (${v.lang})</option>`).join('');
+  const g=voces.findIndex(v=>v.name===localStorage.getItem('qf-voz'));
+  if(prev)$('#voz').value=prev;
+  else if(g>=0)$('#voz').value=g;
+  else{let d=voces.findIndex(v=>/^es-AR/i.test(v.lang));if(d<0)d=voces.findIndex(es);if(d>=0)$('#voz').value=d;}
+}
+if(!synth){$('#msg').textContent='Este navegador no soporta síntesis de voz.';$('#bGo').disabled=true;}
+else{cargarVoces();synth.onvoiceschanged=cargarVoces;}
+$('#voz').onchange=()=>{const v=voces[+$('#voz').value];if(v)localStorage.setItem('qf-voz',v.name)};
+$('#secs').value=localStorage.getItem('qf-secs')||90;
+$('#secs').onchange=()=>localStorage.setItem('qf-secs',$('#secs').value);
+
+// ---------- Wikipedia ----------
+const API='https://es.wikipedia.org/w/api.php';
+async function wiki(params){
+  const u=API+'?'+new URLSearchParams({format:'json',origin:'*',...params});
+  const r=await fetch(u);if(!r.ok)throw new Error('Wikipedia no respondió ('+r.status+')');
+  return r.json();
+}
+async function buscar(q){
+  let d=await wiki({action:'query',list:'search',srsearch:q,srlimit:6,srinfo:'suggestion'});
+  let res=(d.query&&d.query.search)||[];
+  const sug=d.query&&d.query.searchinfo&&d.query.searchinfo.suggestion;
+  if(!res.length&&sug){d=await wiki({action:'query',list:'search',srsearch:sug,srlimit:6});res=(d.query&&d.query.search)||[];}
+  return res.map(x=>x.title);
+}
+async function extracto(title){
+  const d=await wiki({action:'query',prop:'extracts',explaintext:1,exchars:6000,redirects:1,titles:title});
+  const pg=Object.values((d.query&&d.query.pages)||{})[0];
+  return (pg&&pg.extract)||'';
+}
+
+
+// ---------- Libro (Piñeiro, 2008): fuente principal ----------
+const LIBRO=window.CALLES||[];
+const norm=s=>String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+const STOP=new Set('de del la las los el y e en a al'.split(' '));
+const TIT=new Set('doctor doctora dr dra general gral coronel cnel teniente tte capitan cap almirante alm brigadier presidente pte ingeniero ing comodoro sargento libertador monsenor mons fray padre cacique'.split(' '));
+const TIPOS={calle:'calle',avenida:'avenida',av:'avenida',avda:'avenida',pasaje:'pasaje',pje:'pasaje',plaza:'plaza',plazoleta:'plazoleta',parque:'parque',paseo:'paseo',barrio:'barrio',boulevard:'',bulevar:''};
+const toks=s=>norm(s).split(' ').filter(w=>w&&!STOP.has(w)&&!TIT.has(w)&&!(w in TIPOS));
+const LIBRO_T=LIBRO.map(e=>({e,t:new Set(toks(e[0]))}));
+const CALLEROS=/^(calle|avenida|pasaje|autopista|barrio)/;
+function buscarLibro(q){
+  const qt=new Set(toks(q));if(!qt.size||!LIBRO_T.length)return [];
+  const tq=norm(q).split(' ').map(w=>TIPOS[w]).find(Boolean);
+  const r=[];
+  for(const {e,t} of LIBRO_T){
+    if(!t.size)continue;
+    let c=0;for(const w of t)if(qt.has(w))c++;
+    if(!c)continue;
+    let s=0;
+    if(c===t.size&&c===qt.size)s=3;
+    else if([...qt].every(w=>t.has(w)))s=2;
+    else if(c===t.size)s=1;
+    if(!s)continue;
+    s+=(tq&&e[1].startsWith(tq)?0.5:0)+(CALLEROS.test(e[1])?0.2:0);
+    r.push([s,e]);
+  }
+  r.sort((a,b)=>b[0]-a[0]);
+  const mejor=r.length?r[0][0]:0;
+  return r.filter(x=>x[0]>=(mejor>=3?2:1)).slice(0,6).map(x=>x[1]);
+}
+
+// ---------- Paso 1: ¿a quién (o a qué) refiere el nombre de la calle? (OpenStreetMap + Wikidata) ----------
+const CABA='-34.705,-58.532,-34.526,-58.335';   // recuadro de la Ciudad de Buenos Aires
+async function conTiempo(url,ms,opts){
+  const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
+  try{const r=await fetch(url,{...opts,signal:c.signal});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json();}
+  finally{clearTimeout(t);}
+}
+// Servidores de Overpass (OpenStreetMap): si uno falla (502, saturado), prueba el siguiente
+const OVERPASS=['https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass-api.de/api/interpreter'];
+let opOk=0;
+async function overpass(ql){
+  let ult;
+  for(let k=0;k<OVERPASS.length;k++){
+    const i=(opOk+k)%OVERPASS.length;
+    try{const d=await conTiempo(OVERPASS[i]+'?data='+encodeURIComponent(ql),12000);opOk=i;return d;}
+    catch(e){ult=e;console.warn('Overpass',OVERPASS[i],e.message);}
+  }
+  throw ult;
+}
+async function calleNominatim(lat,lon){
+  const d=await conTiempo('https://nominatim.openstreetmap.org/reverse?'+new URLSearchParams({format:'jsonv2',lat,lon,zoom:17,addressdetails:1,'accept-language':'es'}),10000);
+  const a=d.address||{};return a.road||a.pedestrian||null;
+}
+async function porEtimologia(q){
+  const esc=q.replace(/["\\]/g,'').replace(/[.*+?^${}()|[\]]/g,'\\\\$&');
+  const ql='[out:json][timeout:20];way["highway"]["name"~"(^| )'+esc+'$",i]('+CABA+');out tags 60;';
+  const d=await overpass(ql);
+  const calles=new Map();                          // nombre de calle → datos de origen
+  for(const el of d.elements||[]){
+    const tg=el.tags||{};
+    const qids=(tg['name:etymology:wikidata']||'').split(';').map(s=>s.trim()).filter(x=>/^Q\d+$/.test(x));
+    const texto=(tg['name:etymology']||'').trim();
+    const wp=(tg['name:etymology:wikipedia']||'').replace(/^es:/i,'').trim();
+    if(!qids.length&&!texto&&!wp)continue;
+    const k=tg.name+'|'+qids.join(',')+'|'+texto+'|'+wp;
+    if(!calles.has(k))calles.set(k,{name:tg.name,qids,texto,wp});
+  }
+  const lista=[...calles.values()];
+  // Primero las calles cuyo nombre es exactamente lo que escribiste
+  const ex=s=>s.toLowerCase()===q.trim().toLowerCase()?0:1;
+  lista.sort((a,b)=>ex(a.name)-ex(b.name));
+  const todos=[...new Set(lista.flatMap(c=>c.qids))].slice(0,20);
+  const info={};
+  if(todos.length){
+    const w=await conTiempo('https://www.wikidata.org/w/api.php?'+new URLSearchParams({action:'wbgetentities',ids:todos.join('|'),props:'labels|descriptions|sitelinks',languages:'es',sitefilter:'eswiki',format:'json',origin:'*'}),12000);
+    for(const [id,e] of Object.entries(w.entities||{})){
+      info[id]={label:(e.labels&&e.labels.es&&e.labels.es.value)||'',desc:(e.descriptions&&e.descriptions.es&&e.descriptions.es.value)||'',title:(e.sitelinks&&e.sitelinks.eswiki&&e.sitelinks.eswiki.title)||''};
+    }
+  }
+  const out=[],vistos=new Set();
+  const add=(title,label,desc,via)=>{if(!title||vistos.has(title))return;vistos.add(title);out.push({title,label:label||title,desc:desc||'',via});};
+  for(const c of lista){
+    for(const id of c.qids){const i=info[id]||{};add(i.title||i.label,i.label||i.title,i.desc,c.name);}
+    if(c.wp)add(c.wp,c.wp,'',c.name);
+    if(c.texto&&!c.qids.length&&!c.wp)add(c.texto,c.texto,'',c.name);
+  }
+  return out;
+}
+
+// ---------- texto → frases ----------
+const ABR=/\b(Dr|Dra|Gral|Cnel|Tte|Cap|Sr|Sra|Srta|Av|Ing|Lic|Pte|Sta|Sto|Fray|Mons|Pbro|Alm|Brig|Cmte|Dn|Dña|Ud|Uds|etc|aprox|S|J|M|A)\.$/;
+function frases(t){
+  const raw=t.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡"«])/);
+  const out=[];
+  for(const f of raw){
+    if(out.length&&ABR.test(out[out.length-1]))out[out.length-1]+=' '+f;else out.push(f);
+  }
+  return out.filter(Boolean);
+}
+function limpiarTxt(t){
+  return t.replace(/\[[^\]]*\]/g,'').replace(/\([^()]{0,200}\)/g,'')
+    .replace(/\s+/g,' ').replace(/\s+([,.;:])/g,'$1').trim();
+}
+
+// Clasificación: cada frase es "histórica" (origen del nombre, quién fue, fechas) o "geográfica" (recorrido, ubicación, transporte)
+const SECC_FIN=/^(v[eé]ase tambi[eé]n|referencias|enlaces externos|notas|bibliograf[ií]a|fuentes|galer[ií]a)/i;
+const SECC_G=/recorrido|ubicaci|descripci|geograf|barrio|transporte|trazado|puntos|lugares|extensi|curso|l[ií]mites|entorno|hitos|trayecto|tramo|cruces|conexi/i;
+const SECC_H=/histor|orige|nombre|toponim|etimolog|biograf|antecedent|denominaci|vida|fundaci|infancia|carrera|legado|homenaje/i;
+const GEO=/arteria|recorrid|cuadras?|barrio|comuna|estaci[oó]n|subte|l[ií]nea [A-H]\b|colectivo|numeraci[oó]n|cruce|esquina|trazado|traza |kil[oó]metro|metros|hacia el (norte|sur|este|oeste)|desemboca|nace en|termina en|comienza en|empieza en|atraviesa|paralel|bordea|limita|ubicad|se encuentra|situad|autopista|ferrocarril|cementerio|plaza|parque|manzana|sentido|carriles?|tr[aá]nsito|puntos? de inter[eé]s|mano |norte|oeste|este de/gi;
+const HIST=/toma el nombre|tom[oó] el nombre|lleva el nombre|debe su nombre|en honor|homenaje|denominaci|bautiz|\bfue\b|\bfueron\b|naci[oó]|falleci|muri[oó]|gobierno|guerra|revoluci|siglo|\b1[0-9]{3}\b|\b20[0-2][0-9]\b|ordenanza|decreto|inaugur|fund[oó]|origen|llamaba|llamada|cambi[oó]|rebautiz|ley /gi;
+const ORIGEN=/toma el nombre|tom[oó] el nombre|lleva el nombre|debe su nombre|en honor|homenaje|denominaci[oó]n|su nombre|nombre (se|proviene|deriva|hace)|rebautiz|bautiz/i;
+function clasif(f,hint){
+  const g=(f.match(GEO)||[]).length+(hint==='g'?1.5:0);
+  const h=(f.match(HIST)||[]).length+(hint==='h'?1.5:0);
+  return g>h?'g':'h';
+}
+// Separa el artículo en secciones y reparte las frases en {hist, geo}
+function preparar(ext){
+  const secs=[];let cur={h:'',t:[]};
+  for(const l of ext.split('\n')){
+    const m=l.match(/^\s*=+\s*(.*?)\s*=+\s*$/);
+    if(m){if(SECC_FIN.test(m[1]))break;secs.push(cur);cur={h:m[1],t:[]};}
+    else cur.t.push(l);
+  }
+  secs.push(cur);
+  const hist=[],geo=[];
+  for(const s of secs){
+    const hint=SECC_G.test(s.h)?'g':(SECC_H.test(s.h)?'h':'');
+    for(const f of frases(limpiarTxt(s.t.join(' ')))){
+      if(f.length<15)continue;
+      (clasif(f,hint)==='g'?geo:hist).push(f);
+    }
+  }
+  return {hist,geo};
+}
+// Primero lo histórico (el origen del nombre al principio), después lo geográfico, todo dentro del tiempo
+function elegir(titulo,plan,secs){
+  const obj=secs*cps;
+  const lugar=plan.geo.length>=2;          // calle/avenida/lugar; en una biografía todo es histórico
+  let hist=plan.hist.slice();
+  if(lugar)hist=[...hist.filter(f=>ORIGEN.test(f)),...hist.filter(f=>!ORIGEN.test(f))];
+  let n=(titulo+'.').length;
+  const tomar=(lista,cap,dest)=>{
+    for(const f of lista){
+      if(n>=cap*0.97)break;
+      if(n+f.length>cap*1.2&&n>cap*0.6)break;
+      dest.push(f);n+=f.length;
+    }
+  };
+  const H=[],G=[];
+  tomar(hist,lugar?obj*0.62:obj,H);
+  if(lugar)tomar(plan.geo,obj,G);
+  return [titulo+'.',...H,...(G.length&&H.length?['Ahora, la ubicación y el recorrido.']:[]),...G];
+}
+
+// ---------- lectura con ajuste de velocidad ----------
+let cola=[],idx=0,activo=false,pausado=false,ses=0,activoSeg=0,secs=90,timer=null,wl=null;
+function pintar(){
+  $('#txt').innerHTML=cola.map((f,i)=>`<span data-i="${i}">${f.replace(/</g,'&lt;')} </span>`).join('');
+}
+function tick(){
+  if(!activo||pausado)return;
+  activoSeg+=0.25;
+  $('#t1').textContent=fmt(activoSeg);
+  $('#pb').style.width=Math.min(100,activoSeg/secs*100)+'%';
+}
+function hablar(mySes){
+  if(!activo||mySes!==ses)return;
+  if(idx>=cola.length){terminar();return;}
+  const texto=cola[idx];
+  const resto=cola.slice(idx).reduce((a,f)=>a+f.length,0);
+  const tRest=Math.max(secs-activoSeg,2);
+  const rate=Math.min(1.8,Math.max(0.75,resto/(cps*tRest)));
+  const u=new SpeechSynthesisUtterance(texto);
+  const v=voces[+$('#voz').value];
+  if(v){u.voice=v;u.lang=v.lang;}else u.lang='es-AR';
+  u.rate=rate;u.pitch=1;
+  let t0=0;
+  document.querySelectorAll('#txt span').forEach(s=>s.classList.toggle('on',+s.dataset.i===idx));
+  u.onstart=()=>{t0=performance.now();};
+  u.onend=()=>{
+    if(mySes!==ses)return;
+    const dur=(performance.now()-t0)/1000;
+    if(t0&&dur>1.2){                     // recalibra la velocidad real de esta voz
+      const medido=texto.length/(dur*rate);
+      if(medido>5&&medido<40){cps=cps*0.5+medido*0.5;}
+    }
+    idx++;hablar(mySes);
+  };
+  u.onerror=e=>{if(e.error==='interrupted'||e.error==='canceled')return;$('#msg').textContent='Error de voz: '+e.error;terminar();};
+  synth.speak(u);
+}
+function terminar(){
+  activo=false;pausado=false;
+  try{localStorage.setItem('qf-cps',cps.toFixed(2));}catch(e){}
+  $('#bPause').disabled=true;$('#bStop').disabled=true;$('#bPause').textContent='⏸ Pausar';
+  document.querySelectorAll('#txt span').forEach(s=>s.classList.remove('on'));
+  clearInterval(timer);if(wl){wl.release().catch(()=>{});wl=null;}
+  if(typeof gpsOn!=='undefined'&&gpsOn&&gpsPend&&norm(gpsPend)!==norm(gpsCalle)){const c=gpsPend;setTimeout(()=>gpsCargar(c),800);}
+}
+async function leer(titulo,libro){
+  if(activo)synth.cancel();ses++;const mySes=ses;
+  $('#msg').textContent='';$('#play').hidden=false;$('#ttl').textContent=libro?libro[0]+' ('+libro[1]+')':titulo;
+  $('#txt').textContent='Buscando información…';$('#src').textContent='';
+  secs=Math.max(20,+$('#secs').value||90);
+  $('#t2').textContent=fmt(secs);$('#t1').textContent='0:00';$('#pb').style.width='0';
+  try{
+    let ext='';
+    if(titulo){try{ext=await extracto(titulo);}catch(e){if(!libro)throw e;}}
+    if(mySes!==ses)return;
+    const plan=preparar(ext);
+    const hayWiki=plan.hist.length>0||plan.geo.length>0;
+    if(!libro&&!hayWiki){$('#txt').textContent='No encontré texto para ese artículo.';return;}
+    let c,usoWiki=hayWiki;
+    if(libro){
+      // 1º el libro (lo histórico: de dónde viene el nombre), 2º lo que falte de tiempo, con Wikipedia
+      const obj=secs*cps;
+      const L=[libro[0]+', '+libro[1]+'.'];let n=L[0].length;
+      for(const f of frases(libro[2])){if(L.length>1&&n>=obj)break;L.push(f);n+=f.length;}
+      c=L;usoWiki=false;
+      if(hayWiki&&obj-n>250){
+        const W=elegir(titulo,plan,(obj-n)/cps);
+        if(W.length>1){W[0]='Ampliando con Wikipedia: '+titulo+'.';c=[...L,...W];usoWiki=true;}
+      }
+      const est=c.reduce((a,f)=>a+f.length,0)/cps;
+      if(est<secs*0.85)secs=Math.max(15,Math.round(est));
+      $('#t2').textContent=fmt(secs);
+    }else c=elegir(titulo,plan,secs);
+    cola=c;idx=0;activoSeg=0;pausado=false;activo=true;
+    pintar();
+    const partes=[];
+    if(libro)partes.push('Piñeiro, <i>Barrios, calles y plazas de la Ciudad de Buenos Aires</i> (2008)');
+    if(usoWiki||!libro)partes.push('<a href="https://es.wikipedia.org/wiki/'+encodeURIComponent(titulo.replace(/ /g,'_'))+'" target="_blank" rel="noopener">Wikipedia · '+titulo.replace(/</g,'&lt;')+'</a>');
+    $('#src').innerHTML='Fuente: '+partes.join(' + ');
+    $('#bPause').disabled=false;$('#bStop').disabled=false;
+    clearInterval(timer);timer=setInterval(tick,250);
+    try{if(navigator.wakeLock)wl=await navigator.wakeLock.request('screen');}catch(e){}
+    hablar(mySes);
+  }catch(e){$('#txt').textContent='';$('#msg').textContent='No se pudo obtener la información: '+e.message;avisar('No se pudo obtener la información.','errl',30000);}
+}
+
+// ---------- eventos ----------
+let modoGuardado='mix';try{modoGuardado=localStorage.getItem('qf-modo')||'mix';}catch(e){}
+const S={libros:[],wikis:[],libro:null,wiki:null,modo:modoGuardado};   // modo: mix (libro + Wikipedia) | libro | wiki
+const MODOS=[['mix','🔀 Libro + Wikipedia'],['libro','📖 Solo libro'],['wiki','🌐 Solo Wikipedia']];
+function reproducir(){
+  let l=S.modo==='wiki'?null:S.libro,w=S.modo==='libro'?null:S.wiki;
+  if(!l&&!w){l=S.libro;w=S.wiki;}                  // el modo elegido no tiene datos: usar lo que haya
+  if(!l&&!w)return;
+  leer(w,l);
+}
+const unlock=()=>{try{const w=new SpeechSynthesisUtterance(' ');w.volume=0;synth.speak(w);}catch(e){}};
+function chips(){
+  const b=S.libros.map((e,i)=>`<button class="chip${S.libro===e&&S.modo!=='wiki'?' on':''}" data-b="${i}">📖 ${esc(e[0])} (${esc(e[1])})</button>`);
+  const x=S.libros.length?MODOS.map(([m,t])=>`<button class="chip${S.modo===m?' on':''}" data-modo="${m}">${t}</button>`):[];
+  const w=S.wikis.map(c=>`<button class="chip${S.wiki===c.t&&S.modo!=='libro'?' on':''}" data-t="${esc(c.t)}">${c.et?'📍 ':''}${esc(c.label)}</button>`);
+  $('#cand').innerHTML=[...x,...b,...w].join('');
+}
+async function buscarYLeer(){
+  const q=$('#q').value.trim();
+  if(!q||!synth)return;
+  unlock();   // "desbloquea" el audio en el celular mientras todavía estamos dentro del toque del usuario
+  $('#msg').textContent='';$('#cand').innerHTML='';
+  S.libros=buscarLibro(q);S.libro=S.libros[0]||null;S.wikis=[];S.wiki=null;
+  $('#origen').textContent='🔎 Buscando a quién o a qué refiere el nombre de la calle…';
+  try{
+    // Fuente principal: el libro (ya cargado). Complemento: origen del nombre (OpenStreetMap/Wikidata) y Wikipedia.
+    const nomLibro=S.libro?((S.libro[2].match(/^([^(:;,.]{3,70}?)\s*[(:]/)||[])[1]||S.libro[0]).trim():'';
+    const [et,res,res2]=await Promise.all([
+      porEtimologia(q).catch(e=>{console.warn('etimología',e);return [];}),
+      buscar(q).catch(()=>[]),
+      (nomLibro&&norm(nomLibro)!==norm(q))?buscar(nomLibro).catch(()=>[]):Promise.resolve([])]);
+    const cands=et.map(c=>({t:c.title,label:c.label,desc:c.desc,via:c.via,et:1}));
+    const usados=new Set(cands.map(c=>c.t));
+    [...res2,...res].forEach(t=>{if(!usados.has(t)){usados.add(t);cands.push({t,label:t,et:0});}});
+    S.wikis=cands;
+    // con libro: se complementa solo con un artículo cuyo origen está confirmado (📍); si no, queda el libro solo
+    S.wiki=S.libro?((cands.find(c=>c.et)||{}).t||res2[0]||res[0]||null):(cands[0]?cands[0].t:null);
+    if(!S.libro&&!cands.length){$('#origen').textContent='';$('#msg').textContent='No encontré resultados para «'+q+'». Probá con otra grafía.';avisar('No encontré información sobre '+q+'.');return;}
+    const e1=cands.find(c=>c.et);
+    let o='';
+    if(S.libro)o+='📖 En el libro de Piñeiro: <b>'+esc(S.libro[0])+'</b> ('+esc(S.libro[1])+')'+(S.libros.length>1?'. Hay otras entradas abajo.':'.')+'<br>';
+    else o+='No hay una entrada con ese nombre en el libro. ';
+    o+=e1?'📍 Según OpenStreetMap, la calle <b>'+esc(e1.via)+'</b> lleva el nombre de: <b>'+esc(e1.label)+'</b>'+(e1.desc?' ('+esc(e1.desc)+')':'')+'.':'No encontré en OpenStreetMap a quién refiere ese nombre.';
+    if(S.libro&&S.wiki&&S.modo==='mix')o+='<br>🌐 Después se amplía con Wikipedia: <b>'+esc(S.wiki)+'</b>.';
+    $('#origen').innerHTML=o;
+    chips();
+    reproducir();
+  }catch(e){$('#origen').textContent='';$('#msg').textContent='Error al buscar: '+e.message;}
+}
+$('#bGo').onclick=buscarYLeer;
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')buscarYLeer();});
+$('#cand').addEventListener('click',e=>{
+  const bt=e.target.closest('.chip');if(!bt)return;
+  const d=bt.dataset;
+  if(d.modo){S.modo=d.modo;try{localStorage.setItem('qf-modo',S.modo);}catch(_){}}
+  else if(d.b!==undefined){S.libro=S.libros[+d.b];if(S.modo==='wiki')S.modo='mix';}
+  else if(d.t){S.wiki=d.t;if(S.modo==='libro')S.modo='mix';}
+  if(!S.libro&&!S.wiki)return;
+  chips();unlock();
+  reproducir();
+});
+$('#bPause').onclick=()=>{
+  if(synth.paused){synth.resume();pausado=false;$('#bPause').textContent='⏸ Pausar';}
+  else{synth.pause();pausado=true;$('#bPause').textContent='▶ Continuar';}
+};
+$('#bStop').onclick=()=>{gpsPend=null;ses++;synth.cancel();terminar();};
+// ---------- GPS: calle donde estás ----------
+let gpsFix=0,gpsVisto='',gpsConFix=false,gpsPerdido=false,gpsSinDatos=false,gpsPrec=0,gpsIni=0;
+let gpsOn=false,gpsId=null,gpsUlt=null,gpsCalle='',gpsPend=null,gpsBusy=false,gpsWL=null;
+const dist=(a,b)=>{const R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lon-a.lon)*r;const h=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h));};
+function distSeg(p,a,b){                       // metros del punto p al segmento a-b (plano local)
+  const k=Math.cos(p.lat*Math.PI/180),m=111320;
+  const x=q=>[(q.lon-p.lon)*m*k,(q.lat-p.lat)*m];
+  const [ax,ay]=x(a),[bx,by]=x(b);
+  const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;
+  let t=l?((-ax)*dx+(-ay)*dy)/l:0;t=Math.max(0,Math.min(1,t));
+  return Math.hypot(ax+t*dx,ay+t*dy);
+}
+async function calleCercana(lat,lon){
+  const ql='[out:json][timeout:15];way(around:40,'+lat+','+lon+')["highway"]["name"];out tags geom;';
+  let d;try{d=await overpass(ql);}catch(e){return await calleNominatim(lat,lon);}
+  const BAJA=/^(footway|path|steps|cycleway|pedestrian|service|track)$/;
+  let mejor=null;
+  for(const el of d.elements||[]){
+    const g=el.geometry||[];if(g.length<2)continue;
+    let m=1e9;for(let i=1;i<g.length;i++)m=Math.min(m,distSeg({lat,lon},g[i-1],g[i]));
+    if(BAJA.test((el.tags||{}).highway))m+=15;       // veredas y pasillos pesan menos que la calle
+    if(!mejor||m<mejor.m)mejor={m,name:el.tags.name};
+  }
+  return mejor&&mejor.name;
+}
+function gpsCargar(c,cortar){
+  if(!gpsOn)return;
+  if(activo&&!cortar){gpsPend=c;return;}             // lectura en curso: se carga al terminar
+  if(activo){gpsPend=null;ses++;synth.cancel();terminar();}   // manos libres: caminás, la calle vieja ya quedó atrás
+  if(manosOn)avisar('Estás en '+c+'.');
+  gpsCalle=c;gpsPend=null;gpsVisto='';$('#q').value=c;buscarYLeer();
+}
+async function gpsPos(pos){
+  if(!gpsOn)return;
+  const p={lat:pos.coords.latitude,lon:pos.coords.longitude},prec=Math.round(pos.coords.accuracy);
+  gpsFix=Date.now();gpsPrec=prec;
+  if(gpsPerdido){gpsPerdido=false;avisar('GPS recuperado.');}
+  if(prec>150){$('#gps').textContent='📍 Señal GPS débil (±'+prec+' m), esperando…';avisar('Señal de GPS débil.','debil',90000);return;}
+  if(!gpsConFix){gpsConFix=true;avisar('GPS listo.');}
+  if(gpsBusy)return;
+  if(gpsUlt&&dist(gpsUlt,p)<20&&Date.now()-gpsUlt.t<60000)return;   // no te moviste: no consultamos de nuevo
+  gpsBusy=true;gpsUlt={...p,t:Date.now()};
+  try{
+    const c=await calleCercana(p.lat,p.lon);
+    if(!gpsOn)return;
+    if(c){
+      $('#gps').innerHTML='📍 Estás en <b>'+esc(c)+'</b> (±'+prec+' m)'+(activo&&norm(c)!==norm(gpsCalle)?' — la cargo cuando termine la lectura.':'');
+      if(manosOn)$('#mCalle').textContent=c;
+      if(norm(c)!==norm(gpsCalle)){
+        if(manosOn&&activo){                          // confirmamos con 2 lecturas seguidas (evita saltos en las esquinas)
+          if(gpsVisto===norm(c))gpsCargar(c,true);else gpsVisto=norm(c);
+        }else gpsCargar(c);
+      }else gpsVisto='';
+    }else $('#gps').textContent='📍 No encontré una calle con nombre cerca (±'+prec+' m).';
+  }catch(e){gpsUlt=null;$('#gps').textContent='📍 No pude consultar la calle ('+e.message+'). Reintento en el próximo movimiento.';avisar('No pude consultar la calle.','errc',90000);}
+  finally{gpsBusy=false;}
+}
+async function gpsWake(){try{if(gpsOn&&navigator.wakeLock&&!gpsWL){gpsWL=await navigator.wakeLock.request('screen');gpsWL.addEventListener('release',()=>{gpsWL=null;if(gpsOn&&document.visibilityState==='visible')setTimeout(gpsWake,500);});}}catch(e){}}
+function gpsApagar(msg){
+  gpsOn=false;gpsPend=null;gpsUlt=null;nosleepOff();
+  if(gpsId!==null){navigator.geolocation.clearWatch(gpsId);gpsId=null;}
+  if(NATIVO&&bgId!==null){try{Capacitor.registerPlugin('BackgroundGeolocation').removeWatcher({id:bgId});}catch(e){}bgId=null;}
+  if(gpsWL){gpsWL.release().catch(()=>{});gpsWL=null;}
+  $('#bGps').textContent='📍 Seguir por GPS';$('#bGps').classList.remove('p');
+  $('#gps').textContent=msg||'';
+}
+$('#bGps').onclick=()=>{
+  if(gpsOn){gpsApagar();return;}
+  if(!NATIVO&&!navigator.geolocation){$('#gps').textContent='Este navegador no tiene geolocalización.';return;}
+  if(!NATIVO&&!window.isSecureContext){
+    const m='La página está abierta como «'+location.protocol+'//» y Safari solo da la ubicación en páginas https. Hay que alojarla en un sitio https (por ejemplo GitHub Pages); abierta como archivo local no funciona.';
+    $('#gps').textContent='⚠️ '+m;avisar('La página no es segura, https. No puedo usar el GPS.',null,0,true);return;
+  }
+  unlock();                                          // el toque del botón habilita la voz para las lecturas automáticas
+  gpsOn=true;gpsCalle='';gpsFix=0;gpsConFix=false;gpsPerdido=false;gpsSinDatos=false;gpsIni=Date.now();
+  $('#bGps').textContent='⏹ Dejar de seguir';$('#bGps').classList.add('p');
+  $('#gps').textContent='📍 Buscando tu ubicación…';
+  gpsWake();nosleepOn();
+  gpsErrFn=err=>{
+    if(err.code===1){
+      gpsApagar('⚠️ Ubicación denegada. En iPhone hay DOS permisos: (1) Ajustes › Privacidad y seguridad › Localización: activada y en «Sitios web de Safari» elegir «Al usar la app»; (2) en Safari, botón «aA» › Ajustes del sitio web › Ubicación › Permitir. Después cierra y vuelve a abrir la página (recargar no siempre alcanza).');
+      avisar('Ubicación denegada.');
+      try{navigator.permissions.query({name:'geolocation'}).then(r=>{$('#gps').textContent+=' [Estado que informa el navegador: '+r.state+']';});}catch(e){}
+    }
+    else{$('#gps').textContent='📍 No pude obtener tu ubicación (código '+err.code+(err.code===2?': el dispositivo no logra ubicarse':err.code===3?': tardó demasiado':'')+'; '+err.message+'). Sigo intentando…';avisar('No obtengo tu ubicación.','errg',90000);}
+  };
+  gpsWatch();
+};
+// (Re)inicia el seguimiento de ubicación: sirve para arrancar y para recuperarlo si el sistema lo cortó
+let gpsErrFn=null,gpsReinicio=0;
+const NATIVO=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
+let bgId=null;
+function gpsWatch(){
+  if(!gpsOn)return;
+  gpsReinicio=Date.now();
+  if(NATIVO){                                        // app instalada: GPS nativo que sigue con la pantalla apagada
+    const BG=Capacitor.registerPlugin('BackgroundGeolocation');
+    if(bgId!==null){BG.removeWatcher({id:bgId}).catch(()=>{});bgId=null;}
+    BG.addWatcher({backgroundTitle:'¿Quién fue?',backgroundMessage:'Siguiendo tu ubicación',requestPermissions:true,stale:false,distanceFilter:5},(loc,err)=>{
+      if(err){gpsErrFn({code:err.code==='NOT_AUTHORIZED'?1:2,message:err.message||String(err.code||'')});return;}
+      if(loc)gpsPos({coords:{latitude:loc.latitude,longitude:loc.longitude,accuracy:loc.accuracy}});
+    }).then(id=>{bgId=id;});
+    return;
+  }
+  if(gpsId!==null){try{navigator.geolocation.clearWatch(gpsId);}catch(e){}gpsId=null;}
+  gpsId=navigator.geolocation.watchPosition(gpsPos,gpsErrFn,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+}
+// Mantener la pantalla encendida: Wake Lock + respaldo con un video mudo (truco de NoSleep, sirve en iPhone/Safari)
+let nsVid=null;
+function nosleepOn(){
+  try{
+    if(!nsVid){
+      const cv=document.createElement('canvas');cv.width=cv.height=16;
+      const cx=cv.getContext('2d');let f=0;
+      setInterval(()=>{cx.fillStyle=(f++%2)?'#000':'#010101';cx.fillRect(0,0,16,16);},500);
+      nsVid=document.createElement('video');
+      nsVid.setAttribute('playsinline','');nsVid.setAttribute('muted','');nsVid.muted=true;nsVid.loop=true;
+      nsVid.style.cssText='position:fixed;width:1px;height:1px;opacity:.01;pointer-events:none;left:0;top:0';
+      nsVid.srcObject=cv.captureStream(2);
+      document.body.appendChild(nsVid);
+    }
+    if(nsVid.paused)nsVid.play().catch(()=>{});
+  }catch(e){}
+}
+function nosleepOff(){try{if(nsVid)nsVid.pause();}catch(e){}}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible'||!gpsOn)return;
+  gpsWake();nosleepOn();
+  if(silAudio&&manosOn&&silAudio.paused)silAudio.play().catch(()=>{});
+  gpsUlt=null;gpsWatch();                           // al volver, se fuerza una lectura nueva
+});
+// ---------- Modo manos libres (pantalla negra + GPS + auriculares) ----------
+let manosOn=false,manosGps=false,silAudio=null,pressT=null,stall=0;
+function silencioWav(){                              // 1 s de silencio (WAV 8 kHz, 8 bits)
+  const n=8000,b=new Uint8Array(44+n),v=new DataView(b.buffer);
+  const w=(o,t)=>{for(let i=0;i<t.length;i++)b[o+i]=t.charCodeAt(i);};
+  w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,'data');v.setUint32(40,n,true);b.fill(128,44);
+  return URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
+}
+function mediaSes(){                                 // botones de los auriculares / pantalla de bloqueo
+  if(!('mediaSession' in navigator))return;
+  try{
+    navigator.mediaSession.metadata=new MediaMetadata({title:'¿Quién fue?',artist:'Manos libres'});
+    const pp=()=>{
+      if(synth.paused||pausado){synth.resume();pausado=false;$('#bPause').textContent='⏸ Pausar';}
+      else if(activo){synth.pause();pausado=true;$('#bPause').textContent='▶ Continuar';}
+      if(silAudio&&silAudio.paused)silAudio.play().catch(()=>{});
+    };
+    navigator.mediaSession.setActionHandler('play',pp);
+    navigator.mediaSession.setActionHandler('pause',pp);
+    navigator.mediaSession.setActionHandler('stop',()=>$('#bStop').click());
+  }catch(e){}
+}
+async function manosIniciar(){
+  if(!synth){$('#gps').textContent='Este navegador no soporta síntesis de voz.';return;}
+  manosOn=true;unlock();nosleepOn();
+  avisar('Modo manos libres activado.');
+  if(vozPref&&!recOn){vozPorManos=true;vozIniciar();}
+  try{if(!silAudio){silAudio=new Audio(silencioWav());silAudio.loop=true;}await silAudio.play();}catch(e){}
+  mediaSes();
+  manosGps=!gpsOn;
+  if(!gpsOn)$('#bGps').click();                      // enciende el GPS (y mantiene la pantalla activa)
+  $('#mCalle').textContent=gpsCalle||'';$('#mEst').textContent=$('#gps').textContent;
+  $('#manos').classList.add('on');
+  try{if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();}catch(e){}
+  gpsWake();
+}
+function manosSalir(){
+  manosOn=false;$('#manos').classList.remove('on');avisar('Modo manos libres desactivado.');
+  if(vozPorManos){vozPorManos=false;vozDetener();}
+  if(silAudio)silAudio.pause();
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+  if(manosGps&&gpsOn)gpsApagar();
+  manosGps=false;
+}
+$('#bManos').onclick=manosIniciar;
+new MutationObserver(()=>{$('#mEst').textContent=$('#gps').textContent;}).observe($('#gps'),{childList:true,characterData:true,subtree:true});
+setInterval(()=>{if(manosOn)$('#mHora').textContent=gpsFix?'Último dato GPS: hace '+Math.round((Date.now()-gpsFix)/1000)+' s':'Esperando el primer dato del GPS…';},1000);
+const mani=$('#manos');
+mani.addEventListener('pointerdown',()=>{clearTimeout(pressT);$('#mSal').textContent='Saliendo…';pressT=setTimeout(manosSalir,2000);});
+['pointerup','pointercancel','pointerleave'].forEach(ev=>mani.addEventListener(ev,()=>{clearTimeout(pressT);$('#mSal').textContent='Mantené presionada la pantalla 2 segundos para salir';}));
+mani.addEventListener('contextmenu',e=>e.preventDefault());
+// Si el sistema corta la voz (llamada, cambio de app), la retomamos desde la frase en curso
+setInterval(()=>{
+  if(!activo||pausado){stall=0;return;}
+  if(synth.paused){synth.resume();return;}
+  if(synth.speaking||synth.pending){stall=0;return;}
+  if(++stall>=2){stall=0;synth.cancel();ses++;hablar(ses);}
+},3000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&activo&&!pausado&&!synth.speaking&&!synth.pending){synth.cancel();ses++;hablar(ses);}
+});
+// ---------- Avisos de estado por voz ----------
+let avisosOn=true;try{avisosOn=localStorage.getItem('qf-avisos')!=='0';}catch(e){}
+$('#avisos').checked=avisosOn;
+$('#avisos').onchange=()=>{avisosOn=$('#avisos').checked;try{localStorage.setItem('qf-avisos',avisosOn?'1':'0');}catch(e){}};
+const ultAviso={};
+function avisar(txt,clave,espera,forzar){            // se encola detrás de lo que esté sonando (entre frases)
+  if((!avisosOn&&!forzar)||!synth)return;
+  const k=clave||txt,t=Date.now();
+  if(espera&&ultAviso[k]&&t-ultAviso[k]<espera)return;   // no repetir el mismo aviso seguido
+  ultAviso[k]=t;
+  const u=new SpeechSynthesisUtterance(txt),v=voces[+$('#voz').value];
+  if(v){u.voice=v;u.lang=v.lang;}else u.lang='es-AR';
+  u.rate=1.05;synth.speak(u);
+}
+setInterval(()=>{                                      // ¿se cortó el GPS?
+  if(!gpsOn)return;const t=Date.now();
+  // vigilante: si el GPS no da datos, se reinicia el seguimiento (el sistema a veces lo corta en segundo plano)
+  if(!NATIVO&&t-gpsReinicio>25000&&((gpsFix&&t-gpsFix>25000)||(!gpsFix&&gpsIni&&t-gpsIni>15000))){gpsWatch();gpsWake();nosleepOn();}
+  if(gpsFix&&t-gpsFix>90000&&!gpsPerdido){gpsPerdido=true;avisar('No recibo datos de ubicación desde hace un minuto y medio.');}
+  if(!gpsFix&&gpsIni&&t-gpsIni>40000&&!gpsSinDatos){gpsSinDatos=true;avisar('Todavía no recibo tu ubicación. Revisa el permiso de ubicación.');}
+},2000);
+
+// ---------- Comandos de voz ----------
+function interpretar(t){
+  const n=norm(t),w=n.split(' ').filter(Boolean),has=(...k)=>k.some(x=>w.includes(x));
+  if(!w.length||w.length>6)return null;                // frases largas = probablemente la propia lectura
+  if(has('ayuda','comandos'))return 'ayuda';
+  if(has('donde')||has('ubicacion'))return 'donde';
+  if(has('estado','senal'))return 'estado';
+  if(has('repeti','repetir','repite','repetime')||n.includes('de nuevo')||n.includes('otra vez'))return 'repetir';
+  if(has('saltar','salta','saltea','salteá','omitir','siguiente','adelante'))return 'saltar';
+  if(has('salir','apagar','desactivar'))return 'salir';
+  if(has('detener','detene','stop','basta','silencio','callate','calla','terminar','termina'))return 'detener';
+  if(has('pausa','pausar','espera','pare','pará'))return 'pausa';
+  if(has('para')&&w.length<=2)return 'pausa';
+  if(has('segui','seguir','sigue','continua','continuar','reanudar','reanuda','dale','resume'))return 'seguir';
+  if(has('mas')&&(w.length<=3))return 'mas';
+  if(has('menos')&&(w.length<=3))return 'menos';
+  if(has('wikipedia','wiki'))return 'modo:wiki';
+  if(has('libro'))return 'modo:libro';
+  if(has('mixto','mezcla','mix','ambos'))return 'modo:mix';
+  return null;
+}
+function pausarLect(){if(activo&&!pausado){synth.pause();pausado=true;$('#bPause').textContent='▶ Continuar';}}
+function reanudarLect(){if(pausado||synth.paused){synth.resume();pausado=false;$('#bPause').textContent='⏸ Pausar';}}
+function ejecutar(a){
+  const dur=d=>{const v=Math.max(20,Math.min(600,(+$('#secs').value||90)+d));$('#secs').value=v;try{localStorage.setItem('qf-secs',v);}catch(e){}return v;};
+  if(a==='pausa')pausarLect();
+  else if(a==='seguir')reanudarLect();
+  else if(a==='detener'){$('#bStop').onclick();}
+  else if(a==='saltar'){if(activo){pausado=false;ses++;synth.cancel();idx=Math.min(idx+1,cola.length);hablar(ses);}}
+  else if(a==='repetir'){if($('#q').value.trim()){avisar('Repito.');buscarYLeer();}}
+  else if(a==='donde')avisar(gpsCalle?'Estás en '+gpsCalle+', con precisión de '+gpsPrec+' metros.':'Todavía no tengo tu ubicación.',null,0,true);
+  else if(a==='estado'){
+    const seg=gpsFix?Math.round((Date.now()-gpsFix)/1000):null;
+    avisar('GPS '+(gpsOn?'activo'+(seg!==null?', último dato hace '+seg+' segundos':', sin datos todavía'):'apagado')+'. '+(activo?(pausado?'Lectura en pausa.':'Leyendo.'):'En silencio.')+' Modo '+({mix:'libro y Wikipedia',libro:'solo libro',wiki:'solo Wikipedia'}[S.modo])+'. Duración, '+(+$('#secs').value||90)+' segundos.',null,0,true);
+  }
+  else if(a==='mas')avisar('Duración, '+dur(30)+' segundos, desde la próxima calle.',null,0,true);
+  else if(a==='menos')avisar('Duración, '+dur(-30)+' segundos, desde la próxima calle.',null,0,true);
+  else if(a.startsWith('modo:')){
+    S.modo=a.slice(5);try{localStorage.setItem('qf-modo',S.modo);}catch(e){}
+    avisar('Modo '+({mix:'libro y Wikipedia',libro:'solo libro',wiki:'solo Wikipedia'}[S.modo])+'.',null,0,true);
+    chips();if(S.libro||S.wiki)reproducir();
+  }
+  else if(a==='salir'){if(manosOn)manosSalir();}
+  else if(a==='ayuda')avisar('Puedes decir: pausa, seguí, saltar, repetir, detener, dónde estoy, estado, más, menos, modo libro, modo Wikipedia, modo mixto, o salir.',null,0,true);
+}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recOn=false,rec=null,vozPorManos=false,vozPref=false;
+try{vozPref=localStorage.getItem('qf-cmd')==='1';}catch(e){}
+function vozBtn(){$('#bVoz').textContent=recOn?'🎙 Escuchando comandos (tocá para apagar)':'🎙 Comandos de voz';$('#bVoz').classList.toggle('p',recOn);}
+function vozIniciar(){
+  if(!SR){$('#gps').textContent='Este navegador no soporta comandos de voz (probá con Chrome en Android).';avisar('Este navegador no soporta comandos de voz.');return;}
+  recOn=true;vozBtn();
+  rec=new SR();rec.lang='es-AR';rec.continuous=true;rec.interimResults=false;rec.maxAlternatives=3;
+  rec.onresult=ev=>{
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      if(!ev.results[i].isFinal)continue;
+      for(let k=0;k<ev.results[i].length;k++){          // prueba también las alternativas
+        const txt=ev.results[i][k].transcript,a=interpretar(txt);
+        if(a){$('#mCmd').textContent='🎙 «'+txt.trim()+'» → '+a;ejecutar(a);break;}
+        if(k===0)$('#mCmd').textContent='🎙 «'+txt.trim()+'» (no es un comando)';
+      }
+    }
+  };
+  rec.onend=()=>{if(recOn)setTimeout(()=>{try{rec.start();}catch(e){}},500);};   // el navegador lo corta solo: lo reiniciamos
+  rec.onerror=ev=>{
+    if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){recOn=false;vozBtn();$('#gps').textContent='Permiso de micrófono denegado: no puedo escuchar comandos.';avisar('Permiso de micrófono denegado.');}
+  };
+  try{rec.start();}catch(e){}
+}
+function vozDetener(){recOn=false;try{rec&&rec.stop();}catch(e){}vozBtn();}
+$('#bVoz').onclick=()=>{
+  if(recOn){vozPref=false;vozPorManos=false;vozDetener();avisar('Comandos de voz desactivados.');}
+  else{vozPref=true;unlock();vozIniciar();if(recOn)avisar('Comandos de voz activados. Di ayuda para escuchar la lista.');}
+  try{localStorage.setItem('qf-cmd',vozPref?'1':'0');}catch(e){}
+};
+window.addEventListener('beforeunload',()=>synth&&synth.cancel());
+</script>
+</body>
+</html>
