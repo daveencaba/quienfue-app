@@ -92,11 +92,10 @@ textarea{width:100%;background:var(--card);color:var(--tx);border:1px solid var(
       <div id="fwinfo" class="mut" style="margin-bottom:6px"></div>
       <div class="row"><input type="search" id="fwq" placeholder="Título del artículo (o dejá vacío para buscar por el nombre)" autocomplete="off"><button id="fwbus">Buscar</button></div>
       <div class="chips" id="fwcand"></div>
-      <button id="fwdesc" style="margin-top:8px;width:100%">⬇ Descargar artículo completo</button>
+      <button id="fwdesc" style="margin-top:8px;width:100%">📋 Copiar texto completo</button>
       <details id="fwdet" style="margin-top:8px"><summary>📄 Ver texto completo del artículo</summary>
         <textarea id="fwtexto" rows="12" readonly placeholder="Todavía no hay artículo descargado."></textarea>
-        <div class="row" style="margin-top:6px"><button id="fwcopy" style="flex:1">📋 Copiar texto</button><button id="fwpeg" style="flex:1">📝 Pegar resumen abajo</button></div>
-        <div class="mut" style="margin-top:4px">Copiá el texto, resumilo con tu IA y pegá el resultado en «Resumen» antes de Guardar.</div>
+        <div class="mut" style="margin-top:4px">Resumilo con tu IA y pegá el resultado en «Resumen» antes de Guardar.</div>
       </details>
       <label for="fresu">📝 Resumen (editable)</label>
       <button id="fauto" style="width:100%;margin-bottom:6px">✨ Resumen automático</button>
@@ -750,32 +749,34 @@ $('#fwbus').onclick=async()=>{
   try{
     const r=await buscar($('#fwq').value.trim()||fe.nombre);
     if(fe!==FE)return;
-    fCand(r.slice(0,8));fMsg(r.length?'Elegí un título de la lista y tocá «Descargar artículo completo».':'Wikipedia no encontró resultados.',!r.length);
+    fCand(r.slice(0,8));fMsg(r.length?'Elegí un título de la lista y tocá «Copiar texto completo».':'Wikipedia no encontró resultados.',!r.length);
   }catch(e){if(fe===FE)fMsg('Error al buscar: '+e.message,1);}
 };
+async function copiarTexto(t){
+  try{await navigator.clipboard.writeText(t);return true;}catch(_){}
+  const a=$('#fwtexto');$('#fwdet').open=true;a.removeAttribute('readonly');a.focus();a.select();
+  let ok=false;try{ok=document.execCommand('copy');}catch(_){}
+  a.setAttribute('readonly','');return ok;
+}
 $('#fwdesc').onclick=async()=>{
   if(!FE){fMsg('Primero elegí una calle de la lista (o escribí su nombre arriba y tocá «➕ Nueva»).',1);return;}
-  const fe=FE,b=$('#fwdesc');
+  const fe=FE,b=$('#fwdesc'),ET='📋 Copiar texto completo';
   const t=$('#fwq').value.trim();
-  if(!t){fMsg('Escribí o elegí el título del artículo (podés usar «Buscar»).',1);return;}
-  b.disabled=true;b.textContent='⏳ Descargando…';fMsg('Descargando «'+t+'»…');
+  if(!t&&!fe.wikiTexto){fMsg('Escribí o elegí el título del artículo (podés usar «Buscar»).',1);return;}
+  b.disabled=true;
   try{
-    const ext=await extracto(t);
-    if(fe!==FE)return;
-    if(!ext){fMsg('Wikipedia no devolvió texto para ese título.',1);return;}
-    FE.wikiTitulo=t;FE.wikiTexto=ext;fPintar();$('#fwinfo').scrollIntoView({block:'nearest'});
-    fMsg('Descargado: '+ext.length.toLocaleString('es-AR')+' caracteres. Tocá Guardar para conservarlo.');
-  }catch(e){if(fe===FE)fMsg('No se pudo descargar: '+e.message,1);}
-  finally{b.disabled=false;b.textContent='⬇ Descargar artículo completo';}
-};
-$('#fwcopy').onclick=async()=>{
-  const t=$('#fwtexto').value;if(!t){fMsg('Todavía no hay texto para copiar: descargá un artículo.',1);return;}
-  try{await navigator.clipboard.writeText(t);fMsg('Texto copiado ('+t.length.toLocaleString('es-AR')+' caracteres).');}
-  catch(_){const a=$('#fwtexto');a.removeAttribute('readonly');a.focus();a.select();try{document.execCommand('copy');fMsg('Texto copiado.');}catch(e){fMsg('No se pudo copiar: seleccioná el texto a mano.',1);}a.setAttribute('readonly','');}
-};
-$('#fwpeg').onclick=async()=>{
-  try{const t=(await navigator.clipboard.readText()).trim();if(!t){fMsg('El portapapeles está vacío.',1);return;}$('#fresu').value=t;fMsg('Resumen pegado. Revisalo y tocá Guardar.');}
-  catch(_){$('#fresu').focus();fMsg('Tu navegador no deja pegar con el botón: mantené presionado en «Resumen» y elegí Pegar.',1);}
+    if(!fe.wikiTexto||(t&&t!==fe.wikiTitulo)){
+      b.textContent='⏳ Buscando texto…';fMsg('Buscando «'+t+'»…');
+      const ext=await extracto(t);
+      if(fe!==FE)return;
+      if(!ext){fMsg('Wikipedia no devolvió texto para ese título.',1);return;}
+      FE.wikiTitulo=t;FE.wikiTexto=ext;fPintar();
+    }
+    const n=FE.wikiTexto.length.toLocaleString('es-AR');
+    if(await copiarTexto(FE.wikiTexto))fMsg('Texto completo copiado al portapapeles ('+n+' caracteres). Tocá Guardar si querés conservarlo en la ficha.');
+    else fMsg('No se pudo copiar solo: abrí «Ver texto completo», mantené presionado y elegí Copiar todo.',1);
+  }catch(e){if(fe===FE)fMsg('No se pudo obtener el texto: '+e.message,1);}
+  finally{b.disabled=false;b.textContent=ET;}
 };
 $('#fauto').onclick=()=>{
   if(!FE)return;
