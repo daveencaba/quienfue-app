@@ -49,6 +49,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:14px}
     <div class="row" style="margin-top:8px"><button id="bGps" style="flex:1">📍 Seguir por GPS</button><button id="bManos" class="p" style="flex:1">🎧 Manos libres</button></div>
     <div class="row" style="margin-top:8px"><button id="bVoz" style="flex:1">🎙 Comandos de voz</button></div>
     <div id="gps" class="mut" style="margin-top:6px"></div>
+    <div id="modo" class="mut" style="font-size:11px;margin-top:2px"></div>
     <div id="origen" class="mut" style="margin-top:10px"></div>
     <div class="chips" id="cand"></div>
     <div id="msg"></div>
@@ -468,7 +469,7 @@ function gpsCargar(c,cortar){
 async function gpsPos(pos){
   if(!gpsOn)return;
   const p={lat:pos.coords.latitude,lon:pos.coords.longitude},prec=Math.round(pos.coords.accuracy);
-  gpsFix=Date.now();gpsPrec=prec;
+  gpsFix=Date.now();gpsPrec=prec;nLect++;modoTxt();
   if(gpsPerdido){gpsPerdido=false;avisar('GPS recuperado.');}
   if(prec>150){$('#gps').textContent='📍 Señal GPS débil (±'+prec+' m), esperando…';avisar('Señal de GPS débil.','debil',90000);return;}
   if(!gpsConFix){gpsConFix=true;avisar('GPS listo.');}
@@ -535,6 +536,12 @@ function bgPlugin(){                                 // sin bundler: el plugin v
   if(typeof C.registerPlugin==='function')return C.registerPlugin('BackgroundGeolocation');
   return null;
 }
+let nLect=0;
+function modoTxt(){
+  let pl='-';try{pl=NATIVO?(bgPlugin()?'sí':'NO'):'-';}catch(e){pl='error';}
+  $('#modo').textContent='Modo: '+(NATIVO?'app nativa':'navegador')+' · plugin GPS: '+pl+' · lecturas: '+nLect+' · Capacitor: '+(window.Capacitor?'sí':'no');
+}
+modoTxt();
 function gpsWatch(){
   if(!gpsOn)return;
   gpsReinicio=Date.now();
