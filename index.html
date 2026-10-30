@@ -620,7 +620,7 @@ $('#bStop').onclick=()=>{gpsPend=null;ses++;synth.cancel();terminar();};
 // ---------- Fichas por calle (IndexedDB "quienfue", store "calles", clave = norm(nombre)) ----------
 const FI=new Map();let idbDb=null;
 const ACT={q:''};                                   // calle actual
-const fichasListas=new Promise(res=>{
+const idbListas=new Promise(res=>{
   try{
     const rq=indexedDB.open('quienfue',1);
     rq.onupgradeneeded=()=>{rq.result.createObjectStore('calles');};
@@ -635,6 +635,30 @@ const fichasListas=new Promise(res=>{
     rq.onerror=rq.onblocked=()=>res();
   }catch(e){res();}
 });
+// Fichas compartidas: si junto a index.html hay un mis-calles.json (el que publicás en GitHub), se suman a las locales
+async function mezclarFichas(d){
+  const lista=Array.isArray(d)?d.map(r=>[r&&r.nombre,r]):Object.entries(d&&d.fichas?d.fichas:{});
+  let nu=0,ac=0,ig=0;
+  for(const [k0,r] of lista){
+    if(!r||typeof r!=='object'||!(r.nombre||r.wikiTexto||r.resumen||r.propio))continue;
+    const rec={nombre:String(r.nombre||k0||''),wikiTitulo:String(r.wikiTitulo||''),wikiTexto:String(r.wikiTexto||''),resumen:String(r.resumen||''),propio:String(r.propio||''),actualizado:+r.actualizado||0};
+    const k=norm(rec.nombre||k0||'');if(!k)continue;
+    const ex=FI.get(k);
+    if(!ex){await fPut(k,rec);nu++;}
+    else if(rec.actualizado>(+ex.actualizado||0)){await fPut(k,rec);ac++;}   // gana la más reciente
+    else ig++;
+  }
+  return {nu,ac,ig};
+}
+async function cargarBase(){
+  try{
+    const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),4000);
+    const r=await fetch('mis-calles.json',{cache:'no-cache',signal:ctl.signal});clearTimeout(to);
+    if(!r.ok)return;
+    await mezclarFichas(await r.json());
+  }catch(e){/* sin archivo compartido o sin conexión: se usan las fichas locales */}
+}
+const fichasListas=idbListas.then(cargarBase);
 function idbTx(modo,fn){return new Promise((ok,ko)=>{
   if(!idbDb){ok();return;}
   try{const tx=idbDb.transaction('calles',modo);fn(tx.objectStore('calles'));tx.oncomplete=()=>ok();tx.onerror=tx.onabort=()=>ko(tx.error||new Error('operación cancelada'));}
@@ -818,17 +842,7 @@ $('#ffile').onchange=async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;
   try{
     const d=JSON.parse(await f.text());
-    const lista=Array.isArray(d)?d.map(r=>[r&&r.nombre,r]):Object.entries(d&&d.fichas?d.fichas:{});
-    let nu=0,ac=0,ig=0;
-    for(const [k0,r] of lista){
-      if(!r||typeof r!=='object'||!(r.nombre||r.wikiTexto||r.resumen||r.propio))continue;
-      const rec={nombre:String(r.nombre||k0||''),wikiTitulo:String(r.wikiTitulo||''),wikiTexto:String(r.wikiTexto||''),resumen:String(r.resumen||''),propio:String(r.propio||''),actualizado:+r.actualizado||0};
-      const k=norm(rec.nombre||k0||'');if(!k)continue;
-      const ex=FI.get(k);
-      if(!ex){await fPut(k,rec);nu++;}
-      else if(rec.actualizado>(+ex.actualizado||0)){await fPut(k,rec);ac++;}   // gana la más reciente
-      else ig++;
-    }
+    const {nu,ac,ig}=await mezclarFichas(d);
     FE=null;$('#fedit').hidden=true;fCont();fBuscar();pintarFav();
     fMsg('Importación lista: '+nu+' nuevas, '+ac+' actualizadas, '+ig+' sin cambios (la local era más reciente).');
   }catch(err){fMsg('No se pudo importar: '+(err&&err.message||err),1);}
