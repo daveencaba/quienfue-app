@@ -494,7 +494,7 @@ async function gpsWake(){try{if(gpsOn&&navigator.wakeLock&&!gpsWL){gpsWL=await n
 function gpsApagar(msg){
   gpsOn=false;gpsPend=null;gpsUlt=null;nosleepOff();
   if(gpsId!==null){navigator.geolocation.clearWatch(gpsId);gpsId=null;}
-  if(NATIVO&&bgId!==null){try{Capacitor.registerPlugin('BackgroundGeolocation').removeWatcher({id:bgId});}catch(e){}bgId=null;}
+  if(NATIVO&&bgId!==null){try{bgPlugin().removeWatcher({id:bgId});}catch(e){}bgId=null;}
   if(gpsWL){gpsWL.release().catch(()=>{});gpsWL=null;}
   $('#bGps').textContent='📍 Seguir por GPS';$('#bGps').classList.remove('p');
   $('#gps').textContent=msg||'';
@@ -512,7 +512,11 @@ $('#bGps').onclick=()=>{
   $('#gps').textContent='📍 Buscando tu ubicación…';
   gpsWake();nosleepOn();
   gpsErrFn=err=>{
-    if(err.code===1){
+    if(err.code===1&&NATIVO){
+      gpsApagar('⚠️ Ubicación denegada. Andá a Ajustes › Privacidad y seguridad › Localización › Quien fue, y elegí «Siempre» (o «Al usar la app»). Después tocá de nuevo Seguir por GPS.');
+      avisar('Ubicación denegada.');
+    }
+    else if(err.code===1){
       gpsApagar('⚠️ Ubicación denegada. En iPhone hay DOS permisos: (1) Ajustes › Privacidad y seguridad › Localización: activada y en «Sitios web de Safari» elegir «Al usar la app»; (2) en Safari, botón «aA» › Ajustes del sitio web › Ubicación › Permitir. Después cierra y vuelve a abrir la página (recargar no siempre alcanza).');
       avisar('Ubicación denegada.');
       try{navigator.permissions.query({name:'geolocation'}).then(r=>{$('#gps').textContent+=' [Estado que informa el navegador: '+r.state+']';});}catch(e){}
@@ -525,16 +529,25 @@ $('#bGps').onclick=()=>{
 let gpsErrFn=null,gpsReinicio=0;
 const NATIVO=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
 let bgId=null;
+function bgPlugin(){                                 // sin bundler: el plugin vive en Capacitor.Plugins
+  const C=window.Capacitor;if(!C)return null;
+  if(C.Plugins&&C.Plugins.BackgroundGeolocation)return C.Plugins.BackgroundGeolocation;
+  if(typeof C.registerPlugin==='function')return C.registerPlugin('BackgroundGeolocation');
+  return null;
+}
 function gpsWatch(){
   if(!gpsOn)return;
   gpsReinicio=Date.now();
   if(NATIVO){                                        // app instalada: GPS nativo que sigue con la pantalla apagada
-    const BG=Capacitor.registerPlugin('BackgroundGeolocation');
-    if(bgId!==null){BG.removeWatcher({id:bgId}).catch(()=>{});bgId=null;}
-    BG.addWatcher({backgroundTitle:'¿Quién fue?',backgroundMessage:'Siguiendo tu ubicación',requestPermissions:true,stale:false,distanceFilter:5},(loc,err)=>{
-      if(err){gpsErrFn({code:err.code==='NOT_AUTHORIZED'?1:2,message:err.message||String(err.code||'')});return;}
-      if(loc)gpsPos({coords:{latitude:loc.latitude,longitude:loc.longitude,accuracy:loc.accuracy}});
-    }).then(id=>{bgId=id;});
+    try{
+      const BG=bgPlugin();
+      if(!BG){$('#gps').textContent='⚠️ La app no encuentra el plugin de GPS en segundo plano (BackgroundGeolocation). Capacitor: '+Object.keys(window.Capacitor||{}).join(', ');return;}
+      if(bgId!==null){try{BG.removeWatcher({id:bgId});}catch(e){}bgId=null;}
+      Promise.resolve(BG.addWatcher({backgroundTitle:'¿Quién fue?',backgroundMessage:'Siguiendo tu ubicación',requestPermissions:true,stale:false,distanceFilter:5},(loc,err)=>{
+        if(err){gpsErrFn({code:err.code==='NOT_AUTHORIZED'?1:2,message:err.message||String(err.code||'')});return;}
+        if(loc)gpsPos({coords:{latitude:loc.latitude,longitude:loc.longitude,accuracy:loc.accuracy}});
+      })).then(id=>{bgId=id;}).catch(e=>{$('#gps').textContent='⚠️ Error del GPS nativo: '+(e&&e.message||e);});
+    }catch(e){$('#gps').textContent='⚠️ Error al iniciar el GPS nativo: '+(e&&e.message||e);}
     return;
   }
   if(gpsId!==null){try{navigator.geolocation.clearWatch(gpsId);}catch(e){}gpsId=null;}
