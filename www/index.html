@@ -536,12 +536,16 @@ function bgPlugin(){                                 // sin bundler: el plugin v
   if(typeof C.registerPlugin==='function')return C.registerPlugin('BackgroundGeolocation');
   return null;
 }
-let nLect=0;
+let nLect=0,tHide=0,nHide=0,ausTxt='';
 function modoTxt(){
   let pl='-';try{pl=NATIVO?(bgPlugin()?'sí':'NO'):'-';}catch(e){pl='error';}
-  $('#modo').textContent='Modo: '+(NATIVO?'app nativa':'navegador')+' · plugin GPS: '+pl+' · lecturas: '+nLect+' · Capacitor: '+(window.Capacitor?'sí':'no');
+  $('#modo').textContent='Modo: '+(NATIVO?'app nativa':'navegador')+' · plugin GPS: '+pl+' · lecturas: '+nLect+ausTxt;
 }
 modoTxt();
+document.addEventListener('visibilitychange',()=>{            // diagnóstico: ¿llegan lecturas con la app en segundo plano?
+  if(document.visibilityState==='hidden'){tHide=Date.now();nHide=nLect;}
+  else if(tHide){ausTxt=' · ausente '+Math.round((Date.now()-tHide)/1000)+' s, lecturas mientras tanto: '+(nLect-nHide);tHide=0;modoTxt();}
+});
 function gpsWatch(){
   if(!gpsOn)return;
   gpsReinicio=Date.now();
@@ -550,7 +554,7 @@ function gpsWatch(){
       const BG=bgPlugin();
       if(!BG){$('#gps').textContent='⚠️ La app no encuentra el plugin de GPS en segundo plano (BackgroundGeolocation). Capacitor: '+Object.keys(window.Capacitor||{}).join(', ');return;}
       if(bgId!==null){try{BG.removeWatcher({id:bgId});}catch(e){}bgId=null;}
-      Promise.resolve(BG.addWatcher({backgroundTitle:'¿Quién fue?',backgroundMessage:'Siguiendo tu ubicación',requestPermissions:true,stale:false,distanceFilter:5},(loc,err)=>{
+      Promise.resolve(BG.addWatcher({backgroundTitle:'¿Quién fue?',backgroundMessage:'Siguiendo tu ubicación',requestPermissions:true,stale:false,distanceFilter:0},(loc,err)=>{
         if(err){gpsErrFn({code:err.code==='NOT_AUTHORIZED'?1:2,message:err.message||String(err.code||'')});return;}
         if(loc)gpsPos({coords:{latitude:loc.latitude,longitude:loc.longitude,accuracy:loc.accuracy}});
       })).then(id=>{bgId=id;}).catch(e=>{$('#gps').textContent='⚠️ Error del GPS nativo: '+(e&&e.message||e);});
